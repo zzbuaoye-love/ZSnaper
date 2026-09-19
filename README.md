@@ -27,12 +27,18 @@
   <img src="https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet&logoColor=white" alt="8.0" />
   <img src="https://img.shields.io/badge/C%23-12-239120?logo=csharp&logoColor=white" alt="C# 12" />
   <img src="https://img.shields.io/badge/Platform-Windows%2010%2B-0078D6?logo=windows&logoColor=white" alt="Windows 10+" />
-  <a href="#隐私"><img src="https://img.shields.io/badge/OCR-100%25%20Offline-success?logo=shield" alt="100% Offline" /></a>
+  <a href="隐私相关"><img src="https://img.shields.io/badge/OCR-100%25%20Support-success?logo=shield" alt="Offline/Online" /></a>
   <a href="https://github.com/buaoyezz/ZSnaper/releases"><img src="https://img.shields.io/github/v/release/buaoyezz/ZSnaper?include_prereleases&color=orange&label=Version" alt="Latest Release" /></a>
 </p>
 
-`ZSnaper` 是一款面向 Windows 的轻量截图工具并基于`Windows.Media.Ocr`提供本地离线的快速 OCR 能力,我们将智能选区、滚动长截图、图像标注和文字识别放在了一个功能栏，
-> 本软件不上传截图，也不依赖在线识别服务(但后续`可能会支持`接入自己的OCR大模型)
+<p align="center">
+  <strong>ZSnaper 是一款专为 Windows 打造的轻量高效截图工具</strong>
+</p>
+
+软件深度集成 `Windows.Media.Ocr`，带来极速的本地离线文字提取体验；更将**智能选区、滚动长截图、图像标注与文字识别**整合于一体化轻便功能栏中，随调随用
+
+此外，ZSnaper 现已灵活支持接入**第三方 API / 模型 OCR**，在复杂排版与高难度识别场景下，提供更好的体验，<a href="#隐私相关">隐私政策</a>
+
 
 <p align="center">
   <img src="assets/banner.png" alt="ZSnaper — Windows screenshot and offline OCR" width="100%" />
@@ -83,7 +89,8 @@ APP支持在应用内调整`主题`、`动画`、`强调色`、`快捷键`、`�
 
 ## 隐私相关
 
-本项目的`全部`截图、图像预处理与 OCR 识别`均在本地执行`<br>
+本项目的`全部`截图、图像预处理与`离线`的 OCR 识别`均在本地执行`<br>
+> 第三方服务免责：若选用第三方 API 或云端模型处理图片，相关数据流转遵循该服务商规范，ZSnaper 无法控制亦不承担其隐私责任
 ZSnaper 不需要也不会将图片上传到远程服务器，软件内也不包含数据上报流程<br>
 本项目遵循 `GPL-3.0` 协议开源，所有版本更新与相关说明均以中文版本为准并优先维护!
 

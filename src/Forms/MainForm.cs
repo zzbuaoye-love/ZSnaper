@@ -25,10 +25,13 @@ public class MainForm : Form
     private readonly Panel _pageContainer;
     private readonly Panel[] _pages = new Panel[5];
     private ModernTextEditor _ocrTextBox = null!;
-    private Label _homeCaptureCountLabel = null!;
-    private Label _homeOcrCountLabel = null!;
+    private HeroActionCard _captureHeroCard = null!;
+    private HeroActionCard _ocrHeroCard = null!;
+    private int _homeCaptureCount;
+    private int _homeOcrCount;
+    private Label _homeStatsLabel = null!;
     private Label _homeLatestResultLabel = null!;
-    private LinkLabel _homeOpenResultLink = null!;
+    private ModernButton _homeOpenResultButton = null!;
     private ModernButton _updateButton = null!;
     private SettingItemRow _lastUpdateRow = null!;
     private string? _homeLatestFilePath;
@@ -51,8 +54,8 @@ public class MainForm : Form
         Text = "ZSnaper";
         FormBorderStyle = FormBorderStyle.None;
         StartPosition = FormStartPosition.CenterScreen;
-        Size = new Size(680, 420);
-        MinimumSize = new Size(620, 380);
+        Size = new Size(780, 480);
+        MinimumSize = new Size(760, 460);
         BackColor = Color.Black;
         DoubleBuffered = true;
         SetStyle(ControlStyles.SupportsTransparentBackColor | ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
@@ -68,15 +71,15 @@ public class MainForm : Form
         _sidebarPanel = new Panel
         {
             BackColor = Color.Transparent,
-            Location = new Point(14, 62),
-            Size = new Size(136, Height - 78),
+            Location = new Point(12, 66),
+            Size = new Size(160, Height - 82),
             Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left
         };
 
         // 侧边栏按钮列表
         (LucideIcon icon, string label, bool isBottom)[] menuItems = [
             (LucideIcon.Camera, "截图识别", false),
-            (LucideIcon.FileText, "OCR 记录", false),
+            (LucideIcon.FileText, "识图工作台", false),
             (LucideIcon.Keyboard, "快捷键", false),
             (LucideIcon.Sliders, "偏好设置", true),
             (LucideIcon.Info, "关于软件", true)
@@ -90,13 +93,13 @@ public class MainForm : Form
             {
                 Icon = item.icon,
                 LabelText = item.label,
-                Size = new Size(136, 36),
+                Size = new Size(160, 38),
                 IsActive = i == 0
             };
 
             if (!item.isBottom)
             {
-                btn.Location = new Point(0, i * 40);
+                btn.Location = new Point(0, i * 44);
                 btn.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             }
             else
@@ -115,8 +118,8 @@ public class MainForm : Form
         _pageContainer = new Panel
         {
             BackColor = Color.Transparent,
-            Location = new Point(164, 52),
-            Size = new Size(Width - 178, Height - 66),
+            Location = new Point(204, 66),
+            Size = new Size(Width - 236, Height - 86),
             Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
             Padding = new Padding(0)
         };
@@ -243,8 +246,10 @@ public class MainForm : Form
         }
 
         selectedPage.BringToFront();
+        // Hidden docked pages retain their previous bounds while the window resizes.
+        selectedPage.Bounds = _pageContainer.ClientRectangle;
         _currentTabIndex = index;
-        _pageContainer.ResumeLayout(performLayout: false);
+        _pageContainer.ResumeLayout(performLayout: true);
     }
 
     private Panel CreateBasePage()
@@ -280,188 +285,77 @@ public class MainForm : Form
     // 页面 1：快捷截图主面板
     private Panel CreateCapturePage()
     {
-        var panel = CreateBasePage();
-        int contentWidth = panel.Width - 16;
-
-        var welcomeRegion = new Panel
+        Panel panel = CreateBasePage();
+        Label heading = new()
         {
-            BackColor = Color.Transparent,
-            Location = new Point(0, 4),
-            Size = new Size(contentWidth, 70),
-            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
-        };
-
-        var welcomeEyebrow = new Label
-        {
-            Text = "Welcome",
-            Font = new Font("Microsoft YaHei UI", 8.2f, FontStyle.Bold),
+            Text = "捕捉灵感",
+            Font = new Font("Microsoft YaHei UI", 18f, FontStyle.Bold),
             AutoSize = true,
-            Location = new Point(15, 1)
+            Location = new Point(0, 6)
         };
-
-        var welcomeTitle = new Label
+        Label subtitle = new()
         {
-            Text = "ZSnaper",
-            Font = new Font("Microsoft YaHei UI", 15f, FontStyle.Bold),
+            Text = "截图、标注，或将画面转为文字",
+            Font = new Font("Microsoft YaHei UI", 9.5f),
             AutoSize = true,
-            Location = new Point(14, 23)
+            Location = new Point(2, 44)
         };
-
-        var welcomeDescription = new Label
+        _captureHeroCard = new HeroActionCard
         {
-            Text = "What You Want to Capture Today?",
-            Font = new Font("Microsoft YaHei UI", 8.5f, FontStyle.Regular),
-            AutoSize = true,
-            Location = new Point(15, 51)
+            Icon = LucideIcon.Camera, Title = "区域截图",
+            Description = "自由框选，随手标注。",
+            IsPrimary = true, AccessibleName = "区域截图"
         };
-
-        welcomeRegion.Controls.Add(welcomeEyebrow);
-        welcomeRegion.Controls.Add(welcomeTitle);
-        welcomeRegion.Controls.Add(welcomeDescription);
-
-        var statsTitle = new Label
+        _ocrHeroCard = new HeroActionCard
         {
-            Text = "本次运行",
-            Font = new Font("Microsoft YaHei UI", 8.4f, FontStyle.Bold),
-            AutoSize = true,
-            Location = new Point(0, 89)
+            Icon = LucideIcon.FileText, Title = "提取文字",
+            Description = "识别画面中的文字。",
+            IsPrimary = false, AccessibleName = "截图并 OCR"
         };
+        _captureHeroCard.Click += (_, _) => RequestCapture?.Invoke(false);
+        _ocrHeroCard.Click += (_, _) => RequestCapture?.Invoke(true);
 
-        _homeCaptureCountLabel = new Label
+        Label recentTitle = new()
         {
-            Text = "0",
-            Font = new Font("Segoe UI Variable Display", 17f, FontStyle.Bold),
-            AutoSize = true,
-            Location = new Point(0, 109)
+            Text = "最近结果", AutoSize = true,
+            Font = new Font("Microsoft YaHei UI", 10f, FontStyle.Bold)
         };
-
-        var captureCountCaption = new Label
+        ModernButton folderButton = new()
         {
-            Text = "捕捉",
-            Font = new Font("Microsoft YaHei UI", 8.1f, FontStyle.Regular),
-            AutoSize = true,
-            Location = new Point(1, 141)
+            Text = "打开截图文件夹", Icon = LucideIcon.Folder,
+            IsPrimary = false, CornerRadius = 5, Size = new Size(144, 30),
+            Font = new Font("Microsoft YaHei UI", 8.5f)
         };
-
-        var statsDividerOne = new Panel
+        folderButton.Click += (_, _) =>
         {
-            BackColor = Color.Transparent,
-            Location = new Point(142, 113),
-            Size = new Size(1, 38)
+            string directory = ConfigService.GetEffectiveSavePath();
+            Directory.CreateDirectory(directory);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "explorer.exe", Arguments = $"\"{directory}\"", UseShellExecute = true
+            });
         };
-
-        _homeOcrCountLabel = new Label
-        {
-            Text = "0",
-            Font = new Font("Segoe UI Variable Display", 17f, FontStyle.Bold),
-            AutoSize = true,
-            Location = new Point(163, 109)
-        };
-
-        var ocrCountCaption = new Label
-        {
-            Text = "文字读取",
-            Font = new Font("Microsoft YaHei UI", 8.1f, FontStyle.Regular),
-            AutoSize = true,
-            Location = new Point(164, 141)
-        };
-
-        var statsDividerTwo = new Panel
-        {
-            BackColor = Color.Transparent,
-            Location = new Point(304, 113),
-            Size = new Size(1, 38)
-        };
-
-        var readyValue = new Label
-        {
-            Text = "就绪",
-            Font = new Font("Microsoft YaHei UI", 12.5f, FontStyle.Bold),
-            AutoSize = true,
-            Location = new Point(326, 113)
-        };
-
-        var readyCaption = new Label
-        {
-            Text = "本地 OCR",
-            Font = new Font("Microsoft YaHei UI", 8.1f, FontStyle.Regular),
-            AutoSize = true,
-            Location = new Point(327, 141)
-        };
-
-        var actionsTitle = new Label
-        {
-            Text = "开始",
-            Font = new Font("Microsoft YaHei UI", 8.4f, FontStyle.Bold),
-            AutoSize = true,
-            Location = new Point(0, 177)
-        };
-
-        var captureButton = new ModernButton
-        {
-            Text = "截图",
-            IsPrimary = true,
-            CornerRadius = 8,
-            Location = new Point(0, 201),
-            Size = new Size(126, 38)
-        };
-        captureButton.Click += (_, _) => RequestCapture?.Invoke(false);
-
-        var ocrButton = new ModernButton
-        {
-            Text = "读取文字",
-            IsPrimary = false,
-            CornerRadius = 8,
-            Location = new Point(136, 201),
-            Size = new Size(126, 38)
-        };
-        ocrButton.Click += (_, _) => RequestCapture?.Invoke(true);
-
-        var recentTitle = new Label
-        {
-            Text = "最近结果",
-            Font = new Font("Microsoft YaHei UI", 8.4f, FontStyle.Bold),
-            AutoSize = true,
-            Location = new Point(0, 264)
-        };
-
-        var recentResultCard = new ModernCard
-        {
-            CornerRadius = 9,
-            Location = new Point(0, 289),
-            Size = new Size(contentWidth, 48),
-            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
-        };
-
+        ModernCard recentCard = new() { CornerRadius = 8 };
+        Label resultIcon = new() { Size = new Size(28, 28), Location = new Point(18, 22) };
+        resultIcon.Paint += (_, e) => LucideRenderer.Draw(e.Graphics, LucideIcon.FileText,
+            2, 2, 24, ThemeManager.Palette.TextMuted, 1.5f);
         _homeLatestResultLabel = new Label
         {
-            Text = "还没有新的捕捉记录",
-            Font = new Font("Microsoft YaHei UI", 8.3f, FontStyle.Regular),
-            AutoSize = false,
-            AutoEllipsis = true,
-            Location = new Point(14, 14),
-            Size = new Size(Math.Max(1, contentWidth - 114), 22),
+            Text = "你的下一次捕捉，从这里开始",
+            Font = new Font("Microsoft YaHei UI", 9f),
+            Location = new Point(60, 25), AutoEllipsis = true,
+            Size = new Size(280, 24),
             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
         };
-
-        _homeOpenResultLink = new LinkLabel
+        _homeOpenResultButton = new ModernButton
         {
-            Text = "显示文件",
-            Font = new Font("Microsoft YaHei UI", 8.2f, FontStyle.Regular),
-            AutoSize = true,
-            LinkBehavior = LinkBehavior.HoverUnderline,
-            Location = new Point(contentWidth - 75, 13),
-            Anchor = AnchorStyles.Top | AnchorStyles.Right,
-            TabStop = true,
-            Visible = false
+            Text = "查看", IsPrimary = false, CornerRadius = 5,
+            Size = new Size(64, 28), Visible = false,
+            Anchor = AnchorStyles.Top | AnchorStyles.Right
         };
-        _homeOpenResultLink.LinkClicked += (_, _) =>
+        _homeOpenResultButton.Click += (_, _) =>
         {
-            if (string.IsNullOrWhiteSpace(_homeLatestFilePath) || !File.Exists(_homeLatestFilePath))
-            {
-                return;
-            }
-
+            if (string.IsNullOrWhiteSpace(_homeLatestFilePath) || !File.Exists(_homeLatestFilePath)) return;
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
             {
                 FileName = "explorer.exe",
@@ -469,168 +363,71 @@ public class MainForm : Form
                 UseShellExecute = true
             });
         };
-
-        recentResultCard.Controls.Add(_homeLatestResultLabel);
-        recentResultCard.Controls.Add(_homeOpenResultLink);
-
-        void PaintStatsDivider(object? _, PaintEventArgs e)
+        recentCard.Controls.AddRange([resultIcon, _homeLatestResultLabel, _homeOpenResultButton]);
+        Label engineStatus = new()
         {
-            using var pen = new Pen(ThemeManager.Palette.SeparatorColor, 1f);
-            e.Graphics.DrawLine(pen, 0, 0, 0, statsDividerOne.Height);
-        }
-
-        statsDividerOne.Paint += PaintStatsDivider;
-        statsDividerTwo.Paint += PaintStatsDivider;
-        welcomeRegion.Paint += (_, e) =>
-        {
-            using var brush = new SolidBrush(ThemeManager.Palette.AccentColor);
-            e.Graphics.FillRectangle(brush, 0, 3, 3, 62);
+            AutoSize = false, AutoEllipsis = true, Height = 20,
+            Font = new Font("Microsoft YaHei UI", 8.2f)
         };
-
-        Action applyHomeTheme = () =>
+        _homeStatsLabel = new Label
+        {
+            Text = "本次运行  ·  截图 0  ·  识别 0",
+            AutoSize = false, Height = 20,
+            TextAlign = ContentAlignment.MiddleRight,
+            Font = new Font("Microsoft YaHei UI", 8.2f)
+        };
+        void LayoutHome()
+        {
+            int width = Math.Max(320, panel.ClientSize.Width - 2);
+            int gap = 12;
+            int cardWidth = (width - gap) / 2;
+            _captureHeroCard.SetBounds(0, 78, cardWidth, 132);
+            _ocrHeroCard.SetBounds(cardWidth + gap, 78, width - cardWidth - gap, 132);
+            recentTitle.Location = new Point(1, 232);
+            folderButton.Location = new Point(width - folderButton.Width, 225);
+            recentCard.SetBounds(0, 264, width, 68);
+            _homeLatestResultLabel.Width = Math.Max(80, width - 152);
+            _homeOpenResultButton.Location = new Point(width - 80, 24);
+            int footerTop = Math.Max(346, panel.Height - 28);
+            engineStatus.SetBounds(0, footerTop, width / 2, 20);
+            _homeStatsLabel.SetBounds(width / 2, footerTop, width - width / 2, 20);
+        }
+        void UpdateHomeConfiguration()
+        {
+            if (panel.IsDisposed) return;
+            if (panel.InvokeRequired)
+            {
+                panel.BeginInvoke((Action)UpdateHomeConfiguration);
+                return;
+            }
+            _captureHeroCard.ShortcutText = ConfigService.Current.CaptureHotkey;
+            _ocrHeroCard.ShortcutText = ConfigService.Current.OcrHotkey;
+            bool api = ConfigService.Current.OcrProvider == OcrProviderKind.OpenAiCompatible;
+            engineStatus.Text = api ? "文字识别  ·  视觉模型 API" : "文字识别  ·  Windows 本地";
+        }
+        void ApplyHomeTheme()
         {
             ThemePalette palette = ThemeManager.Palette;
-            welcomeEyebrow.ForeColor = palette.AccentColor;
-            welcomeTitle.ForeColor = palette.TextPrimary;
-            welcomeDescription.ForeColor = palette.TextMuted;
-            statsTitle.ForeColor = palette.TextSecondary;
-            _homeCaptureCountLabel.ForeColor = palette.TextPrimary;
-            _homeOcrCountLabel.ForeColor = palette.TextPrimary;
-            captureCountCaption.ForeColor = palette.TextMuted;
-            ocrCountCaption.ForeColor = palette.TextMuted;
-            readyValue.ForeColor = palette.TextPrimary;
-            readyCaption.ForeColor = palette.TextMuted;
-            actionsTitle.ForeColor = palette.TextSecondary;
-            recentTitle.ForeColor = palette.TextSecondary;
-            _homeLatestResultLabel.ForeColor = palette.TextMuted;
-            _homeOpenResultLink.LinkColor = palette.AccentColor;
-            _homeOpenResultLink.ActiveLinkColor = palette.AccentColor;
-            _homeOpenResultLink.VisitedLinkColor = palette.AccentColor;
-            welcomeRegion.Invalidate();
-            statsDividerOne.Invalidate();
-            statsDividerTwo.Invalidate();
-            recentResultCard.Invalidate();
-        };
-        applyHomeTheme();
-        ThemeManager.ThemeChanged += applyHomeTheme;
-        panel.Disposed += (_, _) => ThemeManager.ThemeChanged -= applyHomeTheme;
-
-        panel.Controls.Add(welcomeRegion);
-        panel.Controls.Add(statsTitle);
-        panel.Controls.Add(_homeCaptureCountLabel);
-        panel.Controls.Add(captureCountCaption);
-        panel.Controls.Add(statsDividerOne);
-        panel.Controls.Add(_homeOcrCountLabel);
-        panel.Controls.Add(ocrCountCaption);
-        panel.Controls.Add(statsDividerTwo);
-        panel.Controls.Add(readyValue);
-        panel.Controls.Add(readyCaption);
-        panel.Controls.Add(actionsTitle);
-        panel.Controls.Add(captureButton);
-        panel.Controls.Add(ocrButton);
-        panel.Controls.Add(recentTitle);
-        panel.Controls.Add(recentResultCard);
-
-        return panel;
-    }
-
-    private Panel CreateCapturePageLegacy()
-    {
-        var panel = CreateBasePage();
-        int contentWidth = panel.Width - 16;
-
-        var titleLabel = new Label
+            heading.ForeColor = palette.TextPrimary;
+            subtitle.ForeColor = palette.TextSecondary;
+            recentTitle.ForeColor = palette.TextPrimary;
+            _homeLatestResultLabel.ForeColor = palette.TextSecondary;
+            engineStatus.ForeColor = _homeStatsLabel.ForeColor = palette.TextMuted;
+            panel.Invalidate(true);
+        }
+        panel.Controls.AddRange([heading, subtitle, _captureHeroCard, _ocrHeroCard,
+            recentTitle, folderButton, recentCard, engineStatus, _homeStatsLabel]);
+        panel.Resize += (_, _) => LayoutHome();
+        ConfigService.ConfigChanged += UpdateHomeConfiguration;
+        ThemeManager.ThemeChanged += ApplyHomeTheme;
+        panel.Disposed += (_, _) =>
         {
-            Text = "快捷截图与 OCR 识别",
-            Font = new Font("Microsoft YaHei UI", 12f, FontStyle.Bold),
-            AutoSize = true,
-            Location = new Point(0, 4)
+            ConfigService.ConfigChanged -= UpdateHomeConfiguration;
+            ThemeManager.ThemeChanged -= ApplyHomeTheme;
         };
-        titleLabel.Paint += (s, e) => titleLabel.ForeColor = ThemeManager.Palette.TextPrimary;
-
-        var descLabel = new Label
-        {
-            Text = "截取屏幕选区，支持自动复制到剪贴板、存储到本地图片库，以及离线文字识别。",
-            Font = new Font("Microsoft YaHei UI", 9f),
-            AutoSize = false,
-            Size = new Size(contentWidth, 24),
-            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-            Location = new Point(0, 32)
-        };
-        descLabel.Paint += (s, e) => descLabel.ForeColor = ThemeManager.Palette.TextMuted;
-
-        var btnCapture = new ModernButton
-        {
-            Text = "立即截图 (Alt+Q)",
-            IsPrimary = true,
-            CornerRadius = 8,
-            Size = new Size(150, 36),
-            Location = new Point(0, 66)
-        };
-        btnCapture.Click += (_, _) => RequestCapture?.Invoke(false);
-
-        var btnOcr = new ModernButton
-        {
-            Text = "截图并识别 (Alt+X)",
-            IsPrimary = true,
-            CornerRadius = 8,
-            Size = new Size(155, 36),
-            Location = new Point(160, 66)
-        };
-        btnOcr.Click += (_, _) => RequestCapture?.Invoke(true);
-
-        var btnOpenFolder = new ModernButton
-        {
-            Text = "打开保存目录",
-            IsPrimary = false,
-            CornerRadius = 8,
-            Size = new Size(130, 36),
-            Location = new Point(0, 112)
-        };
-        btnOpenFolder.Click += (_, _) =>
-        {
-            var dir = ConfigService.GetEffectiveSavePath();
-            Directory.CreateDirectory(dir);
-            System.Diagnostics.Process.Start("explorer.exe", dir);
-        };
-
-        var statusCard = new ModernCard
-        {
-            CornerRadius = 10,
-            Location = new Point(0, 160),
-            Size = new Size(contentWidth, 95),
-            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
-        };
-
-        var statusTitle = new Label
-        {
-            Text = "系统运行状态",
-            Font = new Font("Microsoft YaHei UI", 9.5f, FontStyle.Bold),
-            Location = new Point(14, 10),
-            AutoSize = true
-        };
-        statusTitle.Paint += (s, e) => statusTitle.ForeColor = ThemeManager.Palette.TextPrimary;
-
-        var statusDetail = new Label
-        {
-            Text = "• 全局热键: Alt+Q (截图), Alt+X (OCR 识别) 正常监听中\n• OCR 引擎: Windows 本地离线引擎 (中文/英文已就绪)\n• 保存路径: " + ConfigService.GetEffectiveSavePath(),
-            Font = new Font("Microsoft YaHei UI", 8.5f),
-            Location = new Point(14, 32),
-            Size = new Size(statusCard.Width - 28, 52),
-            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
-        };
-        statusDetail.Paint += (s, e) => statusDetail.ForeColor = ThemeManager.Palette.TextSecondary;
-
-        statusCard.Controls.Add(statusTitle);
-        statusCard.Controls.Add(statusDetail);
-
-        panel.Controls.Add(titleLabel);
-        panel.Controls.Add(descLabel);
-        panel.Controls.Add(btnCapture);
-        panel.Controls.Add(btnOcr);
-        panel.Controls.Add(btnOpenFolder);
-        panel.Controls.Add(statusCard);
-
+        UpdateHomeConfiguration();
+        ApplyHomeTheme();
+        LayoutHome();
         return panel;
     }
 
@@ -643,7 +440,7 @@ public class MainForm : Form
 
         var titleLabel = new Label
         {
-            Text = "OCR 文本工作室",
+            Text = "识图工作台",
             Font = new Font("Microsoft YaHei UI", 12f, FontStyle.Bold),
             AutoSize = true,
             Location = new Point(0, 4)
@@ -677,20 +474,51 @@ public class MainForm : Form
             }
         };
 
-        var cleanBtn = new ModernButton
+        var aiCleanBtn = new ModernButton
         {
-            Text = "合并段落",
+            Text = "AI 整理",
+            Icon = LucideIcon.Sparkles,
             IsPrimary = false,
             CornerRadius = 8,
             Size = new Size(100, 32),
             Location = new Point(108, panel.Height - 38),
             Anchor = AnchorStyles.Bottom | AnchorStyles.Left
         };
+        aiCleanBtn.Click += async (_, _) =>
+        {
+            if (string.IsNullOrWhiteSpace(_ocrTextBox.Text)) return;
+            aiCleanBtn.Enabled = false;
+            aiCleanBtn.Text = "整理中...";
+            try
+            {
+                var result = await OcrService.PolishTextAsync(_ocrTextBox.Text, "请智能优化这段文字的排版与分段，保持内容完整，独立标题、选项和菜单严格单独成行。");
+                _ocrTextBox.Text = result.Text;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("AI 整理失败：" + ex.Message, "ZSnaper", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            finally
+            {
+                aiCleanBtn.Enabled = true;
+                aiCleanBtn.Text = "AI 整理";
+            }
+        };
+
+        var cleanBtn = new ModernButton
+        {
+            Text = "本地分段",
+            IsPrimary = false,
+            CornerRadius = 8,
+            Size = new Size(100, 32),
+            Location = new Point(216, panel.Height - 38),
+            Anchor = AnchorStyles.Bottom | AnchorStyles.Left
+        };
         cleanBtn.Click += (_, _) =>
         {
             if (!string.IsNullOrEmpty(_ocrTextBox.Text))
             {
-                _ocrTextBox.Text = OcrTextFormatter.Clean(_ocrTextBox.Text);
+                _ocrTextBox.Text = LocalTextSegmenter.SmartSegment(_ocrTextBox.Text);
             }
         };
 
@@ -700,7 +528,7 @@ public class MainForm : Form
             IsPrimary = false,
             CornerRadius = 8,
             Size = new Size(75, 32),
-            Location = new Point(216, panel.Height - 38),
+            Location = new Point(324, panel.Height - 38),
             Anchor = AnchorStyles.Bottom | AnchorStyles.Left
         };
         clearBtn.Click += (_, _) => _ocrTextBox.Clear();
@@ -708,6 +536,7 @@ public class MainForm : Form
         panel.Controls.Add(titleLabel);
         panel.Controls.Add(_ocrTextBox);
         panel.Controls.Add(copyBtn);
+        panel.Controls.Add(aiCleanBtn);
         panel.Controls.Add(cleanBtn);
         panel.Controls.Add(clearBtn);
 
@@ -735,22 +564,41 @@ public class MainForm : Form
             return;
         }
 
-        _homeCaptureCountLabel.Text = captureCount.ToString();
-        _homeOcrCountLabel.Text = ocrCount.ToString();
+        _homeCaptureCount = captureCount;
+        _homeOcrCount = ocrCount;
+
+        if (_homeStatsLabel != null && !_homeStatsLabel.IsDisposed)
+        {
+            _homeStatsLabel.Text = $"本次运行  ·  截图 {captureCount}  ·  识别 {ocrCount}";
+        }
 
         if (!string.IsNullOrWhiteSpace(savedFilePath))
         {
             _homeLatestFilePath = savedFilePath;
-            _homeLatestResultLabel.Text = savedFilePath;
-            _homeOpenResultLink.Visible = true;
+            if (_homeLatestResultLabel != null && !_homeLatestResultLabel.IsDisposed)
+            {
+                _homeLatestResultLabel.Text = savedFilePath;
+                _homeLatestResultLabel.ForeColor = ThemeManager.Palette.TextPrimary;
+            }
+            if (_homeOpenResultButton != null && !_homeOpenResultButton.IsDisposed)
+            {
+                _homeOpenResultButton.Visible = true;
+            }
             return;
         }
 
         _homeLatestFilePath = null;
-        _homeLatestResultLabel.Text = wasOcr
-            ? "文字已发送到 OCR 工作台"
-            : "截图已复制到剪贴板";
-        _homeOpenResultLink.Visible = false;
+        if (_homeLatestResultLabel != null && !_homeLatestResultLabel.IsDisposed)
+        {
+            _homeLatestResultLabel.Text = wasOcr
+                ? "文字已发送到 OCR 工作台并复制到剪贴板"
+                : "截图已复制到剪贴板";
+            _homeLatestResultLabel.ForeColor = ThemeManager.Palette.TextMuted;
+        }
+        if (_homeOpenResultButton != null && !_homeOpenResultButton.IsDisposed)
+        {
+            _homeOpenResultButton.Visible = false;
+        }
     }
 
     // 页面 3：快捷键配置
@@ -1178,7 +1026,7 @@ public class MainForm : Form
 
         var subtitleLabel = new Label
         {
-            Text = "按类别管理外观、截图、工具栏与系统",
+            Text = "按类别管理外观、截图、OCR、工具栏与系统",
             Font = new Font("Microsoft YaHei UI", 8.4f, FontStyle.Regular),
             ForeColor = ThemeManager.Palette.TextMuted,
             AutoSize = true,
@@ -1579,6 +1427,13 @@ public class MainForm : Form
         workflowCard.Controls.Add(rowSave);
         workflowCard.Controls.Add(rowPath);
 
+        // OCR：本地 Windows 引擎和 OpenAI 兼容视觉 API 共用同一截图入口。
+        var ocrSettingsCard = new OcrSettingsPanel
+        {
+            Size = new Size(contentWidth, 484),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+        };
+
         // 系统：托盘交互与更新设置集中管理。
         var systemCard = CreateSettingsCard(468);
         var trayActionOptions = new[]
@@ -1815,6 +1670,7 @@ public class MainForm : Form
         BindThemeColor(footerHint, palette => palette.TextMuted);
 
         var appearanceLabel = CreateSectionLabel("外观");
+        var ocrLabel = CreateSectionLabel("OCR 引擎");
         var toolbarLabel = CreateSectionLabel("工具栏与批注");
         var workflowLabel = CreateSectionLabel("截图行为");
         var systemLabel = CreateSectionLabel("更新与系统");
@@ -1825,6 +1681,7 @@ public class MainForm : Form
             {
                 (appearanceLabel, appearanceCard),
                 (workflowLabel, workflowCard),
+                (ocrLabel, ocrSettingsCard),
                 (toolbarLabel, toolbarCard),
                 (systemLabel, systemCard)
             };
@@ -1873,6 +1730,8 @@ public class MainForm : Form
         scrollPanel.Content.Controls.Add(toolbarCard);
         scrollPanel.Content.Controls.Add(workflowLabel);
         scrollPanel.Content.Controls.Add(workflowCard);
+        scrollPanel.Content.Controls.Add(ocrLabel);
+        scrollPanel.Content.Controls.Add(ocrSettingsCard);
         scrollPanel.Content.Controls.Add(systemLabel);
         scrollPanel.Content.Controls.Add(systemCard);
         scrollPanel.Content.Controls.Add(footerHint);
@@ -1930,144 +1789,89 @@ public class MainForm : Form
     // 页面 5：关于
     private Panel CreateAboutPage()
     {
-        var panel = CreateBasePage();
-        int contentWidth = panel.Width - 16;
-
-        var titleLabel = new Label
+        Panel panel = CreateBasePage();
+        int width = panel.Width - 2;
+        Label heading = new()
         {
-            Text = "关于 ZSnaper",
-            Font = new Font("Microsoft YaHei UI", 12f, FontStyle.Bold),
-            AutoSize = true,
-            Location = new Point(0, 2)
+            Text = "关于", Font = new Font("Microsoft YaHei UI", 14f, FontStyle.Bold),
+            AutoSize = true, Location = new Point(0, 2)
         };
-
-        var brandSurface = new Panel
+        Panel brand = new()
         {
-            BackColor = Color.Transparent,
-            Location = new Point(0, 36),
-            Size = new Size(contentWidth, 70),
+            BackColor = Color.Transparent, Location = new Point(0, 47),
+            Size = new Size(width, 72),
             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
         };
-        brandSurface.Paint += (_, e) =>
+        brand.Paint += (_, e) => LogoRenderer.DrawLogo(
+            e.Graphics, 2, 10, 42, ThemeManager.Palette.TextPrimary);
+        Label name = new()
         {
-            LogoRenderer.DrawFullBrandLogo(
-                e.Graphics,
-                0f,
-                8f,
-                50f,
-                ThemeManager.Palette.TextPrimary,
-                ThemeManager.Palette.TextPrimary);
+            Text = "ZSnaper", Font = new Font("Segoe UI", 19f, FontStyle.Bold),
+            AutoSize = true, Location = new Point(60, 0)
         };
-
-        var productLabel = new Label
+        Label description = new()
         {
-            Text = "Powered By ZZBuAoYe",
-            Font = new Font("Microsoft YaHei UI", 8.5f, FontStyle.Regular),
-            Location = new Point(1, 110),
-            Size = new Size(contentWidth, 20),
-            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-            TextAlign = ContentAlignment.MiddleLeft
+            Text = "Zip、Snip、Faster",
+            Font = new Font("Microsoft YaHei UI", 9f),
+            AutoSize = true, Location = new Point(62, 42)
         };
-
-        var separator = new Panel
+        brand.Controls.AddRange([name, description]);
+        ModernCard details = new()
         {
-            BackColor = Color.Transparent,
-            Location = new Point(0, 136),
-            Size = new Size(contentWidth, 1),
+            CornerRadius = 8, Location = new Point(0, 137),
+            Size = new Size(width, 136),
             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
         };
-        separator.Paint += (_, e) =>
+        // Build metadata is immutable. Create these controls once instead of
+        // clearing and recreating them on every configuration change.
+        (string Caption, string Value)[] items =
+        [
+            ("版本", AppVersionInfo.DisplayVersion),
+            ("发布通道", AppVersionInfo.BuildChannel == "Release" ? "正式版" : "测试版"),
+            ("构建", $"{AppVersionInfo.BuildNumber}  ·  {AppVersionInfo.BuildDate}"),
+            ("运行环境", "Windows  ·  .NET 8")
+        ];
+        List<Label> captions = [];
+        List<Label> values = [];
+        for (int i = 0; i < items.Length; i++)
         {
-            using var pen = new Pen(ThemeManager.Palette.SeparatorColor, 1f);
-            e.Graphics.DrawLine(pen, 0, 0, separator.Width, 0);
-        };
-
-        var infoContainer = new Panel
-        {
-            BackColor = Color.Transparent,
-            Location = new Point(0, 146),
-            Size = new Size(contentWidth, 180),
-            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
-        };
-
-        var captionLabels = new List<Label>();
-        var valueLabels = new List<Label>();
-
-        void RefreshInfoRows()
-        {
-            infoContainer.Controls.Clear();
-            captionLabels.Clear();
-            valueLabels.Clear();
-
-            var infoItems = new List<(string Caption, string Value)>();
-            infoItems.Add(("VERSION", AppVersionInfo.DisplayVersion));
-            if (AppVersionInfo.ShowChannel)
+            Label caption = new()
             {
-                infoItems.Add(("CHANNEL", AppVersionInfo.BuildChannel));
-            }
-            infoItems.Add(("BUILD NUMBER", AppVersionInfo.BuildNumber));
-            infoItems.Add(("BUILD DATE", AppVersionInfo.BuildDate));
-            infoItems.Add(("BUILD COUNT", $"#{AppVersionInfo.BuildCount}"));
-            infoItems.Add(("PLATFORM", "Windows"));
-            infoItems.Add(("RUNTIME", ".NET 8"));
-
-            int rowStep = 25;
-            for (int i = 0; i < infoItems.Count; i++)
+                Text = items[i].Caption, Font = new Font("Microsoft YaHei UI", 8.8f),
+                Location = new Point(16, 12 + i * 29), Size = new Size(80, 22),
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+            Label value = new()
             {
-                int y = i * rowStep;
-                var (caption, val) = infoItems[i];
-
-                var capLabel = new Label
-                {
-                    Text = caption,
-                    Font = new Font("Microsoft YaHei UI", 8.2f, FontStyle.Regular),
-                    ForeColor = ThemeManager.Palette.TextMuted,
-                    Location = new Point(1, y),
-                    Size = new Size(106, 20),
-                    TextAlign = ContentAlignment.MiddleLeft
-                };
-
-                var valLabel = new Label
-                {
-                    Text = val,
-                    Font = new Font("Segoe UI", 8.5f, FontStyle.Regular),
-                    ForeColor = ThemeManager.Palette.TextSecondary,
-                    Location = new Point(112, y),
-                    Size = new Size(contentWidth - 112, 20),
-                    Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                    TextAlign = ContentAlignment.MiddleLeft
-                };
-
-                captionLabels.Add(capLabel);
-                valueLabels.Add(valLabel);
-                infoContainer.Controls.Add(capLabel);
-                infoContainer.Controls.Add(valLabel);
-            }
+                Text = items[i].Value, Font = new Font("Segoe UI", 9f),
+                Location = new Point(102, 12 + i * 29), Size = new Size(width - 120, 22),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+                AutoEllipsis = true, TextAlign = ContentAlignment.MiddleRight
+            };
+            captions.Add(caption);
+            values.Add(value);
+            details.Controls.AddRange([caption, value]);
         }
-
-        RefreshInfoRows();
-        ConfigService.ConfigChanged += RefreshInfoRows;
-        panel.Disposed += (_, _) => ConfigService.ConfigChanged -= RefreshInfoRows;
-
-        Action applyAboutTheme = () =>
+        Label author = new()
         {
-            titleLabel.ForeColor = ThemeManager.Palette.TextPrimary;
-            productLabel.ForeColor = ThemeManager.Palette.TextMuted;
-            foreach (var cap in captionLabels) cap.ForeColor = ThemeManager.Palette.TextMuted;
-            foreach (var val in valueLabels) val.ForeColor = ThemeManager.Palette.TextSecondary;
-            brandSurface.Invalidate();
-            separator.Invalidate();
+            Text = "由 ZZBuAoYe 制作",
+            Font = new Font("Microsoft YaHei UI", 8.5f), AutoSize = true,
+            Location = new Point(1, 294)
         };
-        applyAboutTheme();
-        ThemeManager.ThemeChanged += applyAboutTheme;
-        panel.Disposed += (_, _) => ThemeManager.ThemeChanged -= applyAboutTheme;
-
-        panel.Controls.Add(titleLabel);
-        panel.Controls.Add(brandSurface);
-        panel.Controls.Add(productLabel);
-        panel.Controls.Add(separator);
-        panel.Controls.Add(infoContainer);
-
+        void ApplyAboutTheme()
+        {
+            ThemePalette palette = ThemeManager.Palette;
+            heading.ForeColor = name.ForeColor = palette.TextPrimary;
+            description.ForeColor = author.ForeColor = palette.TextMuted;
+            foreach (Label caption in captions) caption.ForeColor = palette.TextSecondary;
+            foreach (Label value in values) value.ForeColor = palette.TextPrimary;
+            brand.Invalidate();
+            details.Invalidate();
+        }
+        ApplyAboutTheme();
+        ThemeManager.ThemeChanged += ApplyAboutTheme;
+        panel.Disposed += (_, _) => ThemeManager.ThemeChanged -= ApplyAboutTheme;
+        panel.Controls.AddRange([heading, brand, details, author]);
         return panel;
     }
 
@@ -2116,6 +1920,9 @@ public class MainForm : Form
     private static void DrawSkiaBackground(SKCanvas canvas, Size size, ThemePalette palette)
     {
         canvas.Clear(SkiaDrawing.ToSkColor(palette.BackgroundColor));
+        using var contentPaint = SkiaDrawing.Fill(palette.Mode == ThemeMode.Dark
+            ? Color.FromArgb(39, 39, 39) : Color.FromArgb(249, 249, 249));
+        canvas.DrawRoundRect(new SKRect(184, 50, size.Width - 8, size.Height - 8), 8, 8, contentPaint);
         if (!ThemeManager.EnableGlow || palette.GlowColor1.A == 0) return;
 
         bool isLight = palette.Mode == ThemeMode.Light;
@@ -2125,14 +1932,14 @@ public class MainForm : Form
             size.Height * 0.20f,
             size.Width * 0.75f,
             palette.GlowColor1,
-            (byte)(isLight ? 16 : 22));
+            (byte)(isLight ? 3 : 4));
         DrawSoftGlowOrb(
             canvas,
             size.Width * 0.85f,
             size.Height * 0.85f,
             size.Width * 0.85f,
             palette.GlowColor2,
-            (byte)(isLight ? 14 : 18));
+            (byte)(isLight ? 2 : 3));
     }
 
     private static void DrawSoftGlowOrb(
@@ -2172,15 +1979,15 @@ public class MainForm : Form
     {
         Color logoColor = palette.Mode == ThemeMode.Light ? Color.FromArgb(24, 28, 38) : Color.FromArgb(250, 250, 255);
 
-        SkiaDrawing.DrawLogo(canvas, 16, 14, 28, logoColor);
+        SkiaDrawing.DrawLogo(canvas, 18, 16, 20, logoColor);
         SkiaDrawing.DrawText(
             canvas,
             "ZSnaper",
             "Segoe UI",
-            16.7f,
+            14f,
             palette.TextPrimary,
-            50,
-            22,
+            46,
+            25,
             SKFontStyleWeight.Bold);
         string? channelLabel = AppVersionInfo.WelcomeChannelLabel;
         if (!string.IsNullOrEmpty(channelLabel))
@@ -2189,10 +1996,10 @@ public class MainForm : Form
                 canvas,
                 channelLabel,
                 "Segoe UI",
-                10f,
+                9f,
                 palette.TextMuted,
-                52,
-                36.5f,
+                110,
+                26,
                 SKFontStyleWeight.Bold);
         }
         else if (AppVersionInfo.IsReleaseBuild)

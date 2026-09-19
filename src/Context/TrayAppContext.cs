@@ -568,12 +568,22 @@ public class TrayAppContext : ApplicationContext
                 }
 
                 string text;
+                string modelName;
+                int? totalTokens = null;
+                int? promptTokens = null;
+                int? completionTokens = null;
                 try
                 {
-                    text = await OcrService.RecognizeAsync(bitmap);
+                    OcrRecognitionResult result = await OcrService.RecognizeDetailedAsync(bitmap);
+                    text = result.Text;
+                    modelName = result.ModelName;
+                    totalTokens = result.TotalTokens;
+                    promptTokens = result.PromptTokens;
+                    completionTokens = result.CompletionTokens;
                 }
                 catch (Exception ex)
                 {
+                    modelName = OcrService.GetActiveModelName();
                     text = "(OCR 失败: " + ex.Message + ")";
                 }
 
@@ -583,7 +593,7 @@ public class TrayAppContext : ApplicationContext
                 }
                 else if (ConfigService.Current.AutoCleanOcrParagraphs)
                 {
-                    text = OcrTextFormatter.Clean(text);
+                    text = LocalTextSegmenter.SmartSegment(text);
                 }
 
                 _ocrCount++;
@@ -608,7 +618,7 @@ public class TrayAppContext : ApplicationContext
                     _result = new ResultForm { Icon = CurrentWindowIcon };
                 }
 
-                _result.ShowResult(text, screenPoint);
+                _result.ShowResult(text, screenPoint, modelName, totalTokens, promptTokens, completionTokens);
             }
         }
         catch (Exception exception)

@@ -45,7 +45,7 @@ internal static class Program
 
         UpdateManifest manifest = new UpdatePackageService().ReadManifest(updatePath);
         if (!string.Equals(manifest.Format, "zsnaper-update-1", StringComparison.Ordinal) ||
-            !string.Equals(manifest.To, "0.0.4-beta", StringComparison.OrdinalIgnoreCase))
+            !string.Equals(manifest.To, "0.0.5-beta", StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidDataException("The update manifest did not pass the smoke test.");
         }

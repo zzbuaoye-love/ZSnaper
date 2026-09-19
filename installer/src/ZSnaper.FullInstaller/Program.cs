@@ -7,7 +7,7 @@ namespace ZSnaper.FullInstaller;
 
 internal static class Program
 {
-    public const string Version = "0.0.4-beta";
+    public const string Version = "0.0.5-beta";
     internal static string? PayloadDirectory { get; private set; }
     internal static string InstallerExecutable { get; private set; } = string.Empty;
 

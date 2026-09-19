@@ -1,10 +1,10 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.0.4-beta",
+    [string]$Version = "0.0.5-beta",
     [string]$Configuration = "Release",
     [string]$Runtime = "win-x64",
     [string]$BasePayloadDirectory = "",
-    [string]$BaseVersion = "0.0.3-alpha",
+    [string]$BaseVersion = "0.0.4-beta",
     [switch]$SkipBuild
 )
 
@@ -23,7 +23,7 @@ $payloadZip = Join-Path $workRoot "application-payload.zip"
 if ([string]::IsNullOrWhiteSpace($BasePayloadDirectory)) {
     $candidateBase = Join-Path $installerRoot ".work\base-$BaseVersion-$Runtime"
     if (-not (Test-Path $candidateBase)) {
-        $candidateBase = Join-Path $installerRoot ".work\base-0.0.3-win-x64"
+        $candidateBase = Join-Path $installerRoot ".work\base-0.0.4-beta-win-x64"
     }
     if (Test-Path $candidateBase -PathType Container) {
         $BasePayloadDirectory = $candidateBase

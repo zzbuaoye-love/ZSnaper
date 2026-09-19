@@ -1,6 +1,6 @@
 # ZSnaper installer
 
-This directory contains the handwritten Windows installer for version 0.0.4.
+This directory contains the handwritten Windows installer for version 0.0.5.
 It uses .NET BCL, WinForms, the Windows registry, and the built-in WScript.Shell
 shortcut COM API. It does not use Inno Setup, WiX, Squirrel, Velopack, or any
 other installer framework.
@@ -25,7 +25,7 @@ installer/
 Run this from the repository root:
 
 ```powershell
-.\installer\scripts\Build-Installers.ps1 -Version 0.0.4-beta
+.\installer\scripts\Build-Installers.ps1 -Version 0.0.5-beta
 ```
 
 The full installer is published self-contained, then an application ZIP is
@@ -37,9 +37,9 @@ directory for the previous release:
 
 ```powershell
 .\installer\scripts\Build-Installers.ps1 `
-  -Version 0.0.4-beta `
-  -BaseVersion 0.0.3-alpha `
-  -BasePayloadDirectory .\artifacts\0.0.3-alpha-win-x64
+  -Version 0.0.5-beta `
+  -BaseVersion 0.0.4-beta `
+  -BasePayloadDirectory .\artifacts\0.0.4-beta-win-x64
 ```
 
 The resulting `.zup` contains `update.manifest.json`, changed application
@@ -65,8 +65,8 @@ contains only changed application files and metadata.
 ## Artifacts
 
 ```text
-ZSnaper-v0.0.4-beta-win-x64-Setup.exe
-ZSnaper-v0.0.4-beta-win-x64-Update.exe
-ZSnaper-v0.0.4-beta-win-x64-Update.zup
+ZSnaper-v0.0.5-beta-win-x64-Setup.exe
+ZSnaper-v0.0.5-beta-win-x64-Update.exe
+ZSnaper-v0.0.5-beta-win-x64-Update.zup
 SHA256SUMS.txt
 ```

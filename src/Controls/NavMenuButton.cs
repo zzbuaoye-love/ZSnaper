@@ -54,6 +54,8 @@ public class NavMenuButton : Control
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true);
         BackColor = Color.Transparent;
         Cursor = Cursors.Hand;
+        TabStop = true;
+        SetStyle(ControlStyles.Selectable, true);
         Size = new Size(136, 36);
         Font = new Font("Microsoft YaHei UI", 9.2f, FontStyle.Regular);
     }
@@ -93,24 +95,24 @@ public class NavMenuButton : Control
         {
             // 激活态：轻量整行底色 + 小尺寸强调色图标底板。
             Color activeBackground = isDark
-                ? Color.FromArgb(23, 25, 31)
-                : Color.FromArgb(243, 245, 248);
+                ? Color.FromArgb(45, 45, 45)
+                : Color.FromArgb(230, 230, 230);
 
             using (var brush = new SolidBrush(activeBackground))
             {
                 g.FillPath(brush, path);
             }
 
-            var iconSurfaceRect = new Rectangle(7, 6, 24, 24);
-            using (var iconSurfacePath = GraphicsHelper.GetRoundedRectangle(iconSurfaceRect, 7))
+            var iconSurfaceRect = new Rectangle(1, (Height - 16) / 2, 3, 16);
+            using (var iconSurfacePath = GraphicsHelper.GetRoundedRectangle(iconSurfaceRect, 1))
             using (var iconSurfaceBrush = new SolidBrush(Color.FromArgb(
-                isDark ? 30 : 22,
+                255,
                 palette.AccentColor)))
             {
                 g.FillPath(iconSurfaceBrush, iconSurfacePath);
             }
 
-            iconColor = palette.AccentColor;
+            iconColor = palette.TextPrimary;
             textColor = palette.TextPrimary;
         }
         else if (_isHovered)
@@ -136,9 +138,28 @@ public class NavMenuButton : Control
         LucideRenderer.Draw(g, _icon, iconX, iconY, iconSize, iconColor);
 
         // 2. 绘制菜单文字
-        using var labelFont = new Font("Microsoft YaHei UI", 9.2f, _isActive ? FontStyle.Bold : FontStyle.Regular);
+        using var labelFont = new Font("Microsoft YaHei UI", 9.2f, FontStyle.Regular);
         using var textBrush = new SolidBrush(textColor);
         var labelSize = g.MeasureString(_labelText, labelFont);
         g.DrawString(_labelText, labelFont, textBrush, 40, (Height - labelSize.Height) / 2);
+        if (Focused && ShowFocusCues)
+        {
+            using var focusPen = new Pen(palette.TextSecondary) { DashStyle = DashStyle.Dot };
+            g.DrawRectangle(focusPen, 3, 3, Width - 7, Height - 7);
+        }
     }
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        if (e.KeyCode is Keys.Enter or Keys.Space)
+        {
+            OnClick(EventArgs.Empty);
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+        }
+    }
+
+    protected override void OnGotFocus(EventArgs e) { base.OnGotFocus(e); Invalidate(); }
+    protected override void OnLostFocus(EventArgs e) { base.OnLostFocus(e); Invalidate(); }
 }

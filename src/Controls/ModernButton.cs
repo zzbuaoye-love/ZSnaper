@@ -34,7 +34,7 @@ public class ModernButton : Control
         }
     }
 
-    public int CornerRadius { get; set; } = 10;
+    public int CornerRadius { get; set; } = 6;
 
     public LucideIcon? Icon
     {
@@ -112,6 +112,17 @@ public class ModernButton : Control
         Invalidate();
     }
 
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        if (Enabled && e.KeyCode is Keys.Enter or Keys.Space)
+        {
+            OnClick(EventArgs.Empty);
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+        }
+    }
+
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
@@ -166,6 +177,13 @@ public class ModernButton : Control
                     ? Color.FromArgb(palette.Mode == Models.ThemeMode.Dark ? 38 : 22, palette.TextPrimary)
                     : palette.CardBg;
             textColor = palette.TextPrimary;
+            borderColor = palette.CardBorder;
+        }
+
+        if (!Enabled)
+        {
+            fillBg = palette.InputBg;
+            textColor = palette.TextMuted;
             borderColor = palette.CardBorder;
         }
 

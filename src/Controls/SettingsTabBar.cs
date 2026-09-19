@@ -6,7 +6,7 @@ namespace ZSnaper.Controls;
 
 public sealed class SettingsTabBar : Control
 {
-    private static readonly string[] TabLabels = ["外观", "截图", "工具栏", "系统"];
+    private static readonly string[] TabLabels = ["外观", "截图", "OCR", "工具栏", "系统"];
     private int _selectedIndex;
     private int _hoveredIndex = -1;
 
@@ -101,8 +101,8 @@ public sealed class SettingsTabBar : Control
         Rectangle outer = new(0, 0, Width - 1, Height - 1);
         using (GraphicsPath outerPath = Helpers.GraphicsHelper.GetRoundedRectangle(outer, 9))
         using (var outerBrush = new SolidBrush(palette.Mode == ThemeMode.Dark
-                   ? Color.FromArgb(24, 255, 255, 255)
-                   : Color.FromArgb(18, 15, 23, 42)))
+                   ? Color.FromArgb(0, 255, 255, 255)
+                   : Color.FromArgb(0, 0, 0, 0)))
         {
             graphics.FillPath(outerBrush, outerPath);
         }
@@ -119,9 +119,7 @@ public sealed class SettingsTabBar : Control
             bool hovered = index == _hoveredIndex;
             if (selected || hovered)
             {
-                Color fill = selected
-                    ? palette.AccentColor
-                    : palette.NavItemHover;
+                Color fill = hovered ? palette.NavItemHover : Color.Transparent;
                 using GraphicsPath tabPath = Helpers.GraphicsHelper.GetRoundedRectangle(bounds, 7);
                 using var tabBrush = new SolidBrush(fill);
                 graphics.FillPath(tabBrush, tabPath);
@@ -132,8 +130,15 @@ public sealed class SettingsTabBar : Control
                 TabLabels[index],
                 Font,
                 bounds,
-                selected ? palette.AccentForeground : palette.TextSecondary,
+                selected ? palette.TextPrimary : palette.TextSecondary,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+            if (selected)
+            {
+                using var indicator = new SolidBrush(palette.AccentColor);
+                using GraphicsPath indicatorPath = Helpers.GraphicsHelper.GetRoundedRectangle(
+                    new Rectangle(bounds.Left + bounds.Width / 2 - 10, Height - 4, 20, 3), 1);
+                graphics.FillPath(indicator, indicatorPath);
+            }
         }
     }
 

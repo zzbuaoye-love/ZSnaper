@@ -126,7 +126,7 @@ public class SettingItemRow : Control
         else
         {
             // 主标题 + 副标题
-            using var titleFont = new Font("Microsoft YaHei UI", 9.2f, FontStyle.Bold);
+            using var titleFont = new Font("Microsoft YaHei UI", 9.2f, FontStyle.Regular);
             using var titleBrush = new SolidBrush(palette.TextPrimary);
             g.DrawString(_title, titleFont, titleBrush, 16, 7);
 

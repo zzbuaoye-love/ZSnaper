@@ -6,7 +6,7 @@ namespace ZSnaper.Controls;
 
 public class ModernCard : Panel
 {
-    public int CornerRadius { get; set; } = 14;
+    public int CornerRadius { get; set; } = 8;
     public bool UseSidebarStyle { get; set; } = false;
 
     public ModernCard()

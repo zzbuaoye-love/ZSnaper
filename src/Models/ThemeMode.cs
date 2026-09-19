@@ -74,18 +74,18 @@ public class ThemePalette
             return new ThemePalette
             {
                 Mode = ThemeMode.Light,
-                BackgroundColor = Color.FromArgb(253, 254, 255),
+                BackgroundColor = Color.FromArgb(243, 243, 243),
                 GlowColor1 = glow1,
                 GlowColor2 = glow2,
 
-                SidebarBg = Color.FromArgb(180, 255, 255, 255),
+                SidebarBg = Color.FromArgb(243, 243, 243),
                 SidebarBorder = Color.FromArgb(30, 0, 0, 0),
-                CardBg = Color.FromArgb(235, 255, 255, 255),
-                CardBorder = Color.FromArgb(30, 15, 23, 42),
+                CardBg = Color.FromArgb(255, 255, 255),
+                CardBorder = Color.FromArgb(229, 229, 229),
 
-                TextPrimary = Color.FromArgb(15, 23, 42),
-                TextSecondary = Color.FromArgb(51, 65, 85),
-                TextMuted = Color.FromArgb(100, 116, 139),
+                TextPrimary = Color.FromArgb(26, 26, 26),
+                TextSecondary = Color.FromArgb(82, 82, 82),
+                TextMuted = Color.FromArgb(112, 112, 112),
 
                 AccentColor = lightAccent,
                 AccentForeground = GetContrastingForeground(lightAccent),
@@ -96,7 +96,7 @@ public class ThemePalette
                 WindowControlHover = Color.FromArgb(15, 0, 0, 0),
                 WindowControlText = Color.FromArgb(71, 85, 105),
                 InputBg = Color.FromArgb(255, 255, 255),
-                InputBorder = Color.FromArgb(226, 232, 240)
+                InputBorder = Color.FromArgb(210, 210, 210)
             };
         }
         else
@@ -106,18 +106,18 @@ public class ThemePalette
             return new ThemePalette
             {
                 Mode = ThemeMode.Dark,
-                BackgroundColor = Color.FromArgb(12, 13, 16), // 纯黑曜石深色基底 #0C0D10
+                BackgroundColor = Color.FromArgb(32, 32, 32),
                 GlowColor1 = glow1,
                 GlowColor2 = glow2,
 
-                SidebarBg = Color.FromArgb(140, 18, 20, 26),
+                SidebarBg = Color.FromArgb(32, 32, 32),
                 SidebarBorder = Color.FromArgb(35, 255, 255, 255),
-                CardBg = Color.FromArgb(210, 18, 20, 26),
-                CardBorder = Color.FromArgb(35, 255, 255, 255),
+                CardBg = Color.FromArgb(50, 50, 50),
+                CardBorder = Color.FromArgb(62, 62, 62),
 
-                TextPrimary = Color.FromArgb(245, 247, 250),
-                TextSecondary = Color.FromArgb(180, 188, 200),
-                TextMuted = Color.FromArgb(120, 128, 142),
+                TextPrimary = Color.FromArgb(245, 245, 245),
+                TextSecondary = Color.FromArgb(205, 205, 205),
+                TextMuted = Color.FromArgb(163, 163, 163),
 
                 AccentColor = darkAccent,
                 AccentForeground = GetContrastingForeground(darkAccent),
@@ -127,8 +127,8 @@ public class ThemePalette
                 SeparatorColor = Color.FromArgb(35, 255, 255, 255),
                 WindowControlHover = Color.FromArgb(30, 255, 255, 255),
                 WindowControlText = Color.FromArgb(201, 209, 217),
-                InputBg = Color.FromArgb(18, 20, 26),
-                InputBorder = Color.FromArgb(40, 45, 55)
+                InputBg = Color.FromArgb(43, 43, 43),
+                InputBorder = Color.FromArgb(76, 76, 76)
             };
         }
     }

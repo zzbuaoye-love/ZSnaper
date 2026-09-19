@@ -225,6 +225,23 @@ public sealed class ModernTextEditor : Control
         QueueScrollSync();
     }
 
+    public void ScrollByLines(int lines)
+    {
+        if (_scrollBar == null || !_scrollBar.Visible || _scrollBar.Maximum <= 0) return;
+        int newValue = Math.Clamp(_scrollBar.Value + lines, 0, _scrollBar.Maximum);
+        if (newValue != _scrollBar.Value)
+        {
+            _scrollBar.Value = newValue;
+        }
+    }
+
+    protected override void OnMouseWheel(MouseEventArgs e)
+    {
+        base.OnMouseWheel(e);
+        int lines = -Math.Sign(e.Delta) * Math.Max(1, SystemInformation.MouseWheelScrollLines);
+        ScrollByLines(lines);
+    }
+
     protected override void Dispose(bool disposing)
     {
         if (disposing)
@@ -263,6 +280,18 @@ public sealed class ModernTextEditor : Control
 
         protected override void WndProc(ref Message message)
         {
+            if (message.Msg == WmMouseWheel)
+            {
+                short delta = (short)((long)message.WParam >> 16);
+                int lines = -Math.Sign(delta) * Math.Max(1, SystemInformation.MouseWheelScrollLines);
+                if (Parent is ModernTextEditor editor)
+                {
+                    editor.ScrollByLines(lines);
+                    message.Result = IntPtr.Zero;
+                    return;
+                }
+            }
+
             base.WndProc(ref message);
             if (message.Msg is WmVScroll or WmMouseWheel or WmKeyUp or WmChar)
             {

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using ZSnaper.Context;
+using ZSnaper.Helpers;
 using ZSnaper.Services;
 
 namespace ZSnaper;
@@ -12,6 +13,7 @@ internal static class Program
         AppDiagnostics.Initialize();
         WaitForPreviousInstance(args);
         ApplicationConfiguration.Initialize();
+        Application.AddMessageFilter(new MouseWheelHoverFilter());
 
         using var singleInstance = new SingleInstanceCoordinator();
         if (!singleInstance.IsPrimary)

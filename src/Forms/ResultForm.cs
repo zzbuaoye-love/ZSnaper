@@ -145,13 +145,17 @@ public class ResultForm : Form
         };
         _cleanBtn.Click += (_, _) => _ = ExecuteAiPolishAsync("请智能优化这段文字的排版与分段，保持内容完整，独立标题、选项和菜单严格单独成行。");
 
-        // 点击「更多指令 ▾」展开/收起快捷预设与自定义指令输入框
+        // 点击「更多指令」展开/收起快捷预设与自定义指令输入框
         _optionsBtn = new ModernButton
         {
-            Text = "更多指令 ▾",
+            Text = "更多指令",
+            Icon = LucideIcon.ChevronDown,
+            IconPosition = IconPosition.Right,
+            IconSize = 13,
+            IconGap = 4,
             IsPrimary = false,
             CornerRadius = 8,
-            Size = new Size(95, 32),
+            Size = new Size(100, 32),
             Location = new Point(230, 6)
         };
         _optionsBtn.Click += (_, _) => ToggleAiPanel();
@@ -298,7 +302,8 @@ public class ResultForm : Form
         SuspendLayout();
         _aiPanel.Visible = targetState;
         Height = targetState ? ExpandedHeight : NormalHeight;
-        _optionsBtn.Text = targetState ? "收起指令 ▴" : "更多指令 ▾";
+        _optionsBtn.Text = targetState ? "收起指令" : "更多指令";
+        _optionsBtn.Icon = targetState ? LucideIcon.ChevronUp : LucideIcon.ChevronDown;
         UpdateMainLayout();
         ResumeLayout(true);
 

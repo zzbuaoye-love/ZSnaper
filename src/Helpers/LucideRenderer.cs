@@ -49,7 +49,9 @@ public static class LucideRenderer
         [LucideIcon.Monitor] = "monitor.svg",
         [LucideIcon.Power] = "power.svg",
         [LucideIcon.Search] = "search.svg",
-        [LucideIcon.X] = "x.svg"
+        [LucideIcon.X] = "x.svg",
+        [LucideIcon.ChevronDown] = "chevron-down.svg",
+        [LucideIcon.ChevronUp] = "chevron-up.svg"
     };
 
     private static readonly Dictionary<LucideIcon, string> SvgMarkupCache = new();

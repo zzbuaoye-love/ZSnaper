@@ -50,6 +50,8 @@ public class ModernButton : Control
 
     public int IconGap { get; set; } = 7;
 
+    public IconPosition IconPosition { get; set; } = IconPosition.Left;
+
     /// <summary>
     /// 仅绘制图标，不绘制文字、按钮背景或边框。
     /// </summary>
@@ -214,14 +216,12 @@ public class ModernButton : Control
                 : TextRenderer.MeasureText(g, _text, Font, Size.Empty, TextFormatFlags.NoPadding);
             int gap = textSize.Width > 0 ? IconGap : 0;
             int groupWidth = iconSize + gap + textSize.Width;
-            float iconX = rect.Left + (rect.Width - groupWidth) / 2f;
-            float iconY = rect.Top + (rect.Height - iconSize) / 2f;
-            LucideRenderer.Draw(g, icon, iconX, iconY, iconSize, textColor, 1.8f);
 
-            if (textSize.Width > 0)
+            if (IconPosition == IconPosition.Right && textSize.Width > 0)
             {
+                float textX = rect.Left + (rect.Width - groupWidth) / 2f;
                 var textRect = new Rectangle(
-                    (int)Math.Round(iconX + iconSize + gap),
+                    (int)Math.Round(textX),
                     rect.Top,
                     textSize.Width + 2,
                     rect.Height);
@@ -232,6 +232,32 @@ public class ModernButton : Control
                     textRect,
                     textColor,
                     TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+
+                float iconX = textX + textSize.Width + gap;
+                float iconY = rect.Top + (rect.Height - iconSize) / 2f;
+                LucideRenderer.Draw(g, icon, iconX, iconY, iconSize, textColor, 1.8f);
+            }
+            else
+            {
+                float iconX = rect.Left + (rect.Width - groupWidth) / 2f;
+                float iconY = rect.Top + (rect.Height - iconSize) / 2f;
+                LucideRenderer.Draw(g, icon, iconX, iconY, iconSize, textColor, 1.8f);
+
+                if (textSize.Width > 0)
+                {
+                    var textRect = new Rectangle(
+                        (int)Math.Round(iconX + iconSize + gap),
+                        rect.Top,
+                        textSize.Width + 2,
+                        rect.Height);
+                    TextRenderer.DrawText(
+                        g,
+                        _text,
+                        Font,
+                        textRect,
+                        textColor,
+                        TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+                }
             }
         }
         else
@@ -255,4 +281,10 @@ public class ModernButton : Control
             (int)Math.Round(source.G + (target.G - source.G) * amount),
             (int)Math.Round(source.B + (target.B - source.B) * amount));
     }
+}
+
+public enum IconPosition
+{
+    Left,
+    Right
 }

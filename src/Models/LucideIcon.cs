@@ -31,5 +31,7 @@ public enum LucideIcon
     Monitor,
     Power,
     Search,
-    X
+    X,
+    ChevronDown,
+    ChevronUp
 }

@@ -1854,7 +1854,7 @@ public class MainForm : Form
         }
         Label author = new()
         {
-            Text = "由 ZZBuAoYe 制作",
+            Text = "Powered by ZZBuAoYe",
             Font = new Font("Microsoft YaHei UI", 8.5f), AutoSize = true,
             Location = new Point(1, 294)
         };

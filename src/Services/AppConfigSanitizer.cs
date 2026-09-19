@@ -18,6 +18,7 @@ internal static class AppConfigSanitizer
         if (!Enum.IsDefined(config.ConfirmButtonBehavior)) config.ConfirmButtonBehavior = ConfirmButtonBehavior.Copy;
         if (!Enum.IsDefined(config.AnnotationToolBehavior)) config.AnnotationToolBehavior = AnnotationToolBehavior.Sticky;
         if (!Enum.IsDefined(config.AnnotationArrowStyle)) config.AnnotationArrowStyle = AnnotationArrowStyle.Open;
+        if (!Enum.IsDefined(config.OcrProvider)) config.OcrProvider = OcrProviderKind.WindowsLocal;
         if (!Enum.IsDefined(config.TrayIconStyle)) config.TrayIconStyle = TrayIconStyle.FollowTheme;
         if (!Enum.IsDefined(config.TrayLeftClickAction)) config.TrayLeftClickAction = TrayClickAction.OpenMainWindow;
         if (!Enum.IsDefined(config.TrayMiddleClickAction)) config.TrayMiddleClickAction = TrayClickAction.Capture;
@@ -42,6 +43,7 @@ internal static class AppConfigSanitizer
             : 24f;
         config.AnnotationMosaicPixelSize = Math.Clamp(config.AnnotationMosaicPixelSize, 4, 32);
         config.TrayIconScalePercent = Math.Clamp(config.TrayIconScalePercent, 80, 160);
+        config.OcrApiTimeoutSeconds = Math.Clamp(config.OcrApiTimeoutSeconds, 10, 300);
 
         const FontStyle allowedFontStyles = FontStyle.Bold | FontStyle.Italic | FontStyle.Underline | FontStyle.Strikeout;
         if ((config.AnnotationFontStyle & ~(int)allowedFontStyles) != 0)
@@ -52,6 +54,9 @@ internal static class AppConfigSanitizer
         config.AnnotationFontFamily = NormalizeText(config.AnnotationFontFamily, "Microsoft YaHei UI", 128);
         config.CustomSavePath = NormalizeText(config.CustomSavePath, string.Empty, 32_767);
         config.TrayIconSvgPath = NormalizeText(config.TrayIconSvgPath, string.Empty, 32_767);
+        config.OcrApiEndpoint = NormalizeText(config.OcrApiEndpoint, string.Empty, 2_048);
+        config.OcrApiModel = NormalizeText(config.OcrApiModel, string.Empty, 256);
+        config.OcrCustomPrompt = NormalizeText(config.OcrCustomPrompt, string.Empty, 4_096);
         config.UpdateChannel = NormalizeUpdateChannel(config.UpdateChannel);
         config.UpdateCheckIntervalHours = config.UpdateCheckIntervalHours is 6 or 12 or 24 or 168
             ? config.UpdateCheckIntervalHours

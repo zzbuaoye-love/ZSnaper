@@ -1,10 +1,11 @@
 using Windows.Graphics.Imaging;
 using Windows.Media.Ocr;
+using ZSnaper.Models;
 
 namespace ZSnaper.Services;
 
 /// <summary>
-/// Coordinates OCR recognition through the Windows on-device OCR engine.
+/// Coordinates OCR recognition through the configured local or API provider.
 /// </summary>
 public static class OcrService
 {
@@ -25,8 +26,86 @@ public static class OcrService
         Bitmap bitmap,
         CancellationToken cancellationToken)
     {
+        OcrRecognitionResult result = await RecognizeDetailedAsync(bitmap, cancellationToken);
+        return result.Text;
+    }
+
+    public static Task<OcrRecognitionResult> RecognizeDetailedAsync(Bitmap bitmap) =>
+        RecognizeDetailedAsync(bitmap, CancellationToken.None);
+
+    public static async Task<OcrRecognitionResult> RecognizeDetailedAsync(
+        Bitmap bitmap,
+        CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(bitmap);
         cancellationToken.ThrowIfCancellationRequested();
+
+        AppConfig config = ConfigService.Current;
+        if (config.OcrProvider == OcrProviderKind.OpenAiCompatible)
+        {
+            var settings = new OcrApiSettings(
+                config.OcrApiEndpoint,
+                config.OcrApiModel,
+                config.OcrApiTimeoutSeconds,
+                config.OcrCustomPrompt);
+            return await OpenAiCompatibleOcrClient.RecognizeDetailedAsync(
+                bitmap,
+                settings,
+                OcrCredentialStore.TryGetApiKey(),
+                cancellationToken);
+        }
+
+        string text = await RecognizeWithWindowsAsync(bitmap, cancellationToken);
+        return new OcrRecognitionResult(text, "Windows 本地离线");
+    }
+
+    public static string GetActiveModelName()
+    {
+        AppConfig config = ConfigService.Current;
+        if (config.OcrProvider == OcrProviderKind.OpenAiCompatible)
+        {
+            return string.IsNullOrWhiteSpace(config.OcrApiModel) ? "API 模型" : config.OcrApiModel.Trim();
+        }
+
+        return "Windows 本地离线";
+    }
+
+    public static async Task<OcrRecognitionResult> PolishTextAsync(
+        string text,
+        string instruction,
+        CancellationToken cancellationToken = default)
+    {
+        AppConfig config = ConfigService.Current;
+        var settings = new OcrApiSettings(
+            config.OcrApiEndpoint,
+            config.OcrApiModel,
+            config.OcrApiTimeoutSeconds);
+        return await OpenAiCompatibleOcrClient.PolishTextAsync(
+            text,
+            instruction,
+            settings,
+            OcrCredentialStore.TryGetApiKey(),
+            cancellationToken);
+    }
+
+    internal static Task<string> RecognizeWithApiAsync(
+        Bitmap bitmap,
+        OcrApiSettings settings,
+        string? apiKey,
+        CancellationToken cancellationToken = default) =>
+        OpenAiCompatibleOcrClient.RecognizeAsync(bitmap, settings, apiKey, cancellationToken);
+
+    internal static Task<OcrRecognitionResult> RecognizeDetailedWithApiAsync(
+        Bitmap bitmap,
+        OcrApiSettings settings,
+        string? apiKey,
+        CancellationToken cancellationToken = default) =>
+        OpenAiCompatibleOcrClient.RecognizeDetailedAsync(bitmap, settings, apiKey, cancellationToken);
+
+    private static async Task<string> RecognizeWithWindowsAsync(
+        Bitmap bitmap,
+        CancellationToken cancellationToken)
+    {
 
         OcrEngine engine = Engine.Value
             ?? throw new OcrUnavailableException(MissingLanguagePackMessage);

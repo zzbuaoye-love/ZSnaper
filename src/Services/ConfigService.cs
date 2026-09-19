@@ -19,6 +19,11 @@ public class AppConfig
     public bool EnableBackgroundGlow { get => EnableGlowEffect; set => EnableGlowEffect = value; }
     public string AccentColorHex { get; set; } = "#10B981"; // 翡翠绿
     public bool AutoCopyClipboard { get; set; } = true;
+    public OcrProviderKind OcrProvider { get; set; } = OcrProviderKind.WindowsLocal;
+    public string OcrApiEndpoint { get; set; } = string.Empty;
+    public string OcrApiModel { get; set; } = string.Empty;
+    public int OcrApiTimeoutSeconds { get; set; } = 60;
+    public string OcrCustomPrompt { get; set; } = string.Empty;
     public TrayIconStyle TrayIconStyle { get; set; } = TrayIconStyle.FollowTheme;
     public string TrayIconSvgPath { get; set; } = string.Empty;
     public string TrayIconLightColorHex { get; set; } = "#383C40";

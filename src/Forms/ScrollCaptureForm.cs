@@ -42,7 +42,6 @@ internal sealed class ScrollCaptureForm : Form
             screenBounds.Top + screenBounds.Height / 2));
 
         Rectangle virtualScreen = SystemInformation.VirtualScreen;
-        Bounds = virtualScreen;
         _selection = new Rectangle(
             screenBounds.X - virtualScreen.X,
             screenBounds.Y - virtualScreen.Y,
@@ -50,7 +49,9 @@ internal sealed class ScrollCaptureForm : Form
             screenBounds.Height);
 
         FormBorderStyle = FormBorderStyle.None;
+        AutoScaleMode = AutoScaleMode.None;
         StartPosition = FormStartPosition.Manual;
+        Bounds = virtualScreen;
         ShowInTaskbar = false;
         TopMost = true;
         DoubleBuffered = true;

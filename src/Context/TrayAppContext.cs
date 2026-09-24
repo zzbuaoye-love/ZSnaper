@@ -5,6 +5,7 @@ using ZSnaper.Models;
 using ZSnaper.Services;
 using ZSnaper.Controls;
 using ZSnaper.Update;
+using ZSnaper.Plugins;
 
 namespace ZSnaper.Context;
 
@@ -18,6 +19,7 @@ public class TrayAppContext : ApplicationContext
     private string _appliedTrayIconSettingsKey;
     private readonly OverlayForm _overlay;
     private readonly HotkeyService _hotkeyService;
+    private readonly PluginRuntimeManager _pluginManager;
     private readonly MainForm _mainForm;
     private readonly ModernTrayMenu _trayMenu;
     private readonly ToolStripMenuItem _captureMenuItem;
@@ -57,7 +59,9 @@ public class TrayAppContext : ApplicationContext
         _overlay.Captured += OnCaptured;
 
         _hotkeyService = new HotkeyService();
+        _overlay.AttachHotkeyService(_hotkeyService);
         _hotkeyService.CommandTriggered += ExecuteHotkeyCommand;
+        _pluginManager = new PluginRuntimeManager();
 
         _mainForm = new MainForm
         {
@@ -71,6 +75,7 @@ public class TrayAppContext : ApplicationContext
         _mainForm.RequestHotkeyRecordingStart += _hotkeyService.BeginRecording;
         _mainForm.RequestHotkeyRecordingStop += _ => _hotkeyService.EndRecording();
         _mainForm.RequestUpdateCheck += () => _ = CheckForUpdatesAsync(manual: true);
+        _mainForm.SetPluginManager(_pluginManager);
         _mainForm.RequestOpenUpdate += unused => _ = ApplyPendingUpdateAsync();
         _mainForm.Shown += (_, _) => CheckForUpdatesIfDue();
 
@@ -88,7 +93,7 @@ public class TrayAppContext : ApplicationContext
             Visible = true
         };
         _overlay.CaptureFailed += message =>
-            _tray.ShowBalloonTip(1800, "ZSnaper", message, ToolTipIcon.Warning);
+            ShowWindowsNotification(1800, "ZSnaper", message, ToolTipIcon.Warning);
         ThemeManager.ThemeChanged += ApplyThemeIcon;
 
         _trayMenu = new ModernTrayMenu();
@@ -158,7 +163,7 @@ public class TrayAppContext : ApplicationContext
         _hotkeyService.RegisterConfiguredHotkeys(out bool captureOk, out bool ocrOk);
         if (!captureOk)
         {
-            _tray.ShowBalloonTip(
+            ShowWindowsNotification(
                 2000,
                 "ZSnaper",
                 $"{_hotkeyService.CaptureGesture.DisplayText} 截图快捷键启用失败，{(_hotkeyService.IsCaptureForceBinding ? "按键拦截未能启动" : "可能已被占用")}",
@@ -166,7 +171,7 @@ public class TrayAppContext : ApplicationContext
         }
         if (!ocrOk)
         {
-            _tray.ShowBalloonTip(
+            ShowWindowsNotification(
                 2000,
                 "ZSnaper",
                 $"{_hotkeyService.OcrGesture.DisplayText} OCR 快捷键启用失败，{(_hotkeyService.IsOcrForceBinding ? "按键拦截未能启动" : "可能已被占用")}",
@@ -179,13 +184,20 @@ public class TrayAppContext : ApplicationContext
         if (otherFailures.Length > 0)
         {
             string names = string.Join("、", otherFailures.Select(command => HotkeyCommandCatalog.GetDefinition(command).Name));
-            _tray.ShowBalloonTip(2200, "ZSnaper", $"这些快捷键启用失败：{names}", ToolTipIcon.Warning);
+            ShowWindowsNotification(2200, "ZSnaper", $"这些快捷键启用失败：{names}", ToolTipIcon.Warning);
         }
 
         if (!startMinimizedToTray)
         {
             ShowMainForm();
         }
+        _ = LoadPluginsAsync();
+    }
+
+    private async Task LoadPluginsAsync()
+    {
+        try { await _pluginManager.StartEnabledAsync(); }
+        catch (Exception exception) { AppDiagnostics.LogException("TrayAppContext.LoadPlugins", exception); }
     }
 
     private void ShowMainForm()
@@ -304,7 +316,7 @@ public class TrayAppContext : ApplicationContext
         catch (Exception exception)
         {
             AppDiagnostics.LogException("TrayAppContext.OpenSaveFolder", exception);
-            _tray.ShowBalloonTip(
+            ShowWindowsNotification(
                 2500,
                 "ZSnaper",
                 "无法打开截图目录：" + ShortenError(exception.Message),
@@ -398,14 +410,11 @@ public class TrayAppContext : ApplicationContext
                     isBusy: false,
                     release.TagName);
 
-                if (manual || ConfigService.Current.ShowNotification)
-                {
-                    _tray.ShowBalloonTip(
-                        4000,
-                        "ZSnaper 有新版本",
-                        $"发现 v{version}，可在设置页打开下载页",
-                        ToolTipIcon.Info);
-                }
+                ShowWindowsNotification(
+                    4000,
+                    "ZSnaper 有新版本",
+                    $"发现 v{version}，可在设置页打开下载页",
+                    ToolTipIcon.Info);
             }
             else if (result.IsSuccess)
             {
@@ -413,7 +422,7 @@ public class TrayAppContext : ApplicationContext
                 _mainForm.SetUpdateStatus("已是最新", isBusy: false);
                 if (manual)
                 {
-                    _tray.ShowBalloonTip(2200, "ZSnaper", "当前已是最新版本", ToolTipIcon.Info);
+                    ShowWindowsNotification(2200, "ZSnaper", "当前已是最新版本", ToolTipIcon.Info);
                 }
             }
             else
@@ -421,7 +430,7 @@ public class TrayAppContext : ApplicationContext
                 _mainForm.SetUpdateStatus("检查失败", isBusy: false);
                 if (manual)
                 {
-                    _tray.ShowBalloonTip(
+                    ShowWindowsNotification(
                         3000,
                         "ZSnaper",
                         result.ErrorMessage ?? "检查更新失败，请稍后重试",
@@ -462,7 +471,7 @@ public class TrayAppContext : ApplicationContext
         catch (Exception exception)
         {
             _mainForm.SetUpdateStatus("重试更新", isBusy: false, release.TagName);
-            _tray.ShowBalloonTip(3500, "ZSnaper", "更新失败：" + exception.Message, ToolTipIcon.Warning);
+            ShowWindowsNotification(3500, "ZSnaper", "更新失败：" + exception.Message, ToolTipIcon.Warning);
         }
         finally
         {
@@ -476,7 +485,7 @@ public class TrayAppContext : ApplicationContext
             uri.Scheme != Uri.UriSchemeHttps ||
             !string.Equals(uri.Host, "github.com", StringComparison.OrdinalIgnoreCase))
         {
-            _tray.ShowBalloonTip(2500, "ZSnaper", "更新链接无效", ToolTipIcon.Warning);
+            ShowWindowsNotification(2500, "ZSnaper", "更新链接无效", ToolTipIcon.Warning);
             return;
         }
 
@@ -490,7 +499,7 @@ public class TrayAppContext : ApplicationContext
         }
         catch (Exception ex)
         {
-            _tray.ShowBalloonTip(3000, "ZSnaper", "无法打开更新页面：" + ex.Message, ToolTipIcon.Warning);
+            ShowWindowsNotification(3000, "ZSnaper", "无法打开更新页面：" + ex.Message, ToolTipIcon.Warning);
         }
     }
 
@@ -505,7 +514,7 @@ public class TrayAppContext : ApplicationContext
         if (_disposed || _exitRequested || _overlay.IsDisposed) return;
         if (_overlay.Visible)
         {
-            _overlay.Activate();
+            if (!_overlay.PreservesForeground) _overlay.Activate();
             return;
         }
 
@@ -513,17 +522,46 @@ public class TrayAppContext : ApplicationContext
         _defaultCaptureAction = defaultAction;
         try
         {
-            _overlay.BeginCapture();
+            _overlay.BeginCapture(ShouldPreserveForegroundForCapture());
         }
         catch (Exception exception)
         {
             AppDiagnostics.LogException("TrayAppContext.StartCapture", exception);
-            _tray.ShowBalloonTip(
+            ShowWindowsNotification(
                 3000,
                 "ZSnaper",
                 "无法开始截图：" + ShortenError(exception.Message),
                 ToolTipIcon.Warning);
         }
+    }
+
+    private static bool ShouldPreserveForegroundForCapture()
+    {
+        nint foreground = NativeMethods.GetForegroundWindow();
+        if (foreground == nint.Zero || !NativeMethods.IsWindowVisible(foreground) ||
+            NativeMethods.IsIconic(foreground) || !NativeMethods.GetWindowRect(foreground, out NativeMethods.RECT rect))
+        {
+            return false;
+        }
+
+        NativeMethods.GetWindowThreadProcessId(foreground, out uint processId);
+        if (processId == (uint)Environment.ProcessId) return false;
+        try
+        {
+            if (string.Equals(System.Diagnostics.Process.GetProcessById((int)processId).ProcessName,
+                    "explorer", StringComparison.OrdinalIgnoreCase)) return false;
+        }
+        catch (ArgumentException) { }
+        catch (InvalidOperationException) { }
+        catch (System.ComponentModel.Win32Exception) { }
+
+        Rectangle window = rect.ToRectangle();
+        Rectangle monitor = Screen.FromHandle(foreground).Bounds;
+        const int tolerance = 16;
+        return window.Left <= monitor.Left + 2 && window.Top <= monitor.Top + 2 &&
+               window.Right >= monitor.Right - 2 && window.Bottom >= monitor.Bottom - 2 &&
+               window.Left >= monitor.Left - tolerance && window.Top >= monitor.Top - tolerance &&
+               window.Right <= monitor.Right + tolerance && window.Bottom <= monitor.Bottom + tolerance;
     }
 
     private async void OnCaptured(
@@ -551,6 +589,9 @@ public class TrayAppContext : ApplicationContext
                     CaptureService.TrySaveToPictures(bitmap, out savedFilePath, out saveError);
                 }
 
+                try { _pluginManager.PublishCapture(bitmap, effectiveAction.ToString()); }
+                catch (Exception exception) { AppDiagnostics.LogException("TrayAppContext.PluginCapture", exception); }
+
                 _captureCount++;
 
                 if (effectiveAction == CaptureCompletionAction.Pin)
@@ -572,6 +613,7 @@ public class TrayAppContext : ApplicationContext
                 int? totalTokens = null;
                 int? promptTokens = null;
                 int? completionTokens = null;
+                bool ocrFailed = false;
                 try
                 {
                     OcrRecognitionResult result = await OcrService.RecognizeDetailedAsync(bitmap);
@@ -583,6 +625,9 @@ public class TrayAppContext : ApplicationContext
                 }
                 catch (Exception ex)
                 {
+                    ocrFailed = true;
+                    AppDiagnostics.LogException("TrayAppContext.OnCaptured.Ocr", ex);
+                    ShowWindowsNotification(3000, "ZSnaper", "OCR 识别失败：" + ShortenError(ex.Message), ToolTipIcon.Warning);
                     modelName = OcrService.GetActiveModelName();
                     text = "(OCR 失败: " + ex.Message + ")";
                 }
@@ -600,16 +645,16 @@ public class TrayAppContext : ApplicationContext
                 _mainForm.UpdateHomeOverview(_captureCount, _ocrCount, savedFilePath, wasOcr: true);
                 bool textCopied = CaptureService.TryCopyTextToClipboard(text);
 
-                if (ConfigService.Current.ShowNotification)
+                if (!ocrFailed && ConfigService.Current.ShowNotification)
                 {
                     string message = textCopied
                         ? "OCR 识别完成，文字已复制到剪贴板"
                         : "OCR 识别完成，但剪贴板暂时不可用";
-                    _tray.ShowBalloonTip(1000, "ZSnaper", message, textCopied ? ToolTipIcon.Info : ToolTipIcon.Warning);
-                    if (saveError is not null)
-                    {
-                        _tray.ShowBalloonTip(2500, "ZSnaper", "保存截图失败：" + ShortenError(saveError), ToolTipIcon.Warning);
-                    }
+                    ShowWindowsNotification(1000, "ZSnaper", message, textCopied ? ToolTipIcon.Info : ToolTipIcon.Warning);
+                }
+                if (saveError is not null)
+                {
+                    ShowWindowsNotification(2500, "ZSnaper", "保存截图失败：" + ShortenError(saveError), ToolTipIcon.Warning);
                 }
 
                 _mainForm.UpdateLatestOcrText(text);
@@ -626,7 +671,7 @@ public class TrayAppContext : ApplicationContext
             AppDiagnostics.LogException("TrayAppContext.OnCaptured", exception);
             if (!_disposed)
             {
-                _tray.ShowBalloonTip(
+                ShowWindowsNotification(
                     3000,
                     "ZSnaper",
                     "处理截图失败：" + ShortenError(exception.Message),
@@ -650,7 +695,7 @@ public class TrayAppContext : ApplicationContext
         catch (Exception exception)
         {
             AppDiagnostics.LogException("TrayAppContext.CaptureCurrentScreen", exception);
-            _tray.ShowBalloonTip(
+            ShowWindowsNotification(
                 2500,
                 "ZSnaper",
                 "当前屏幕截图失败：" + ShortenError(exception.Message),
@@ -663,7 +708,7 @@ public class TrayAppContext : ApplicationContext
         if (_disposed || _exitRequested) return;
         if (!CaptureService.TryGetImageFromClipboard(out Bitmap? bitmap) || bitmap is null)
         {
-            _tray.ShowBalloonTip(2200, "ZSnaper", "剪贴板中没有可贴出的图片", ToolTipIcon.Info);
+            ShowWindowsNotification(2200, "ZSnaper", "剪贴板中没有可贴出的图片", ToolTipIcon.Info);
             return;
         }
 
@@ -721,22 +766,28 @@ public class TrayAppContext : ApplicationContext
             : (false, false);
     }
 
+    private void ShowWindowsNotification(int timeout, string title, string message, ToolTipIcon icon)
+    {
+        if (!ConfigService.Current.ShowWindowsNotifications || _disposed) return;
+        _tray.ShowBalloonTip(timeout, title, message, icon);
+    }
+
     private void ShowCaptureNotification(
         CaptureCompletionAction action,
         bool copied,
         string? savedFilePath,
         string? saveError)
     {
-        if (!ConfigService.Current.ShowNotification) return;
-
         if (saveError is not null)
         {
             string failure = copied
                 ? "截图已复制，但保存失败："
                 : "保存截图失败：";
-            _tray.ShowBalloonTip(2800, "ZSnaper", failure + ShortenError(saveError), ToolTipIcon.Warning);
+            ShowWindowsNotification(2800, "ZSnaper", failure + ShortenError(saveError), ToolTipIcon.Warning);
             return;
         }
+
+        if (!ConfigService.Current.ShowNotification) return;
 
         string message = action switch
         {
@@ -752,7 +803,7 @@ public class TrayAppContext : ApplicationContext
             CaptureCompletionAction.Default when savedFilePath is not null => $"截图已保存到 {savedFilePath}",
             _ => "截图已完成"
         };
-        _tray.ShowBalloonTip(800, "ZSnaper", message, ToolTipIcon.Info);
+        ShowWindowsNotification(800, "ZSnaper", message, ToolTipIcon.Info);
     }
 
     private void ExitApp()
@@ -818,6 +869,7 @@ public class TrayAppContext : ApplicationContext
             foreach (PinnedImageForm pinned in _pinnedImages.ToArray()) pinned.Dispose();
             _pinnedImages.Clear();
             _mainForm.Dispose();
+            _pluginManager.Dispose();
             _hotkeyService.Dispose();
             _updateCancellation.Dispose();
             _lightTrayIcon.Dispose();

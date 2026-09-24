@@ -21,6 +21,7 @@ internal static class PluginStabilityProgram
             TestPackageInspection(packagePath);
             TestTraversalPackage(root);
             TestIllegalFilenamePackage(root);
+            await TestInstallAndLifecycleAsync(root);
             await TestUpdateResponseValidationAsync();
             Console.WriteLine("Plugin stability tests passed.");
             return 0;
@@ -105,6 +106,55 @@ internal static class PluginStabilityProgram
 
         PluginPackageInspection inspection = PluginPackageService.Inspect(packagePath, "0.0.3");
         Assert(!inspection.IsValid, "package with an illegal Windows filename should be rejected");
+    }
+
+    private static async Task TestInstallAndLifecycleAsync(string root)
+    {
+        string packagePath = Path.Combine(root, "sample.zsp");
+        PluginManifest manifest = new()
+        {
+            Id = "example.plugin", Name = "Example Plugin", Version = "1.0.0",
+            Entry = new PluginEntryPoint
+            {
+                Assembly = "Example.Plugin.dll", Type = "Example.Plugin.ExamplePlugin"
+            },
+            Requires = new PluginRequirements
+            {
+                AppVersion = ">=0.0.5", PluginApi = ">=1.0.0 <2.0.0"
+            }
+        };
+        using (ZipArchive archive = ZipFile.Open(packagePath, ZipArchiveMode.Create))
+        {
+            using (StreamWriter writer = new(archive.CreateEntry("manifest.json").Open()))
+                writer.Write(PluginManifestJson.Serialize(manifest));
+            using Stream entry = archive.CreateEntry("Example.Plugin.dll").Open();
+            using FileStream assembly = File.OpenRead(typeof(Example.Plugin.ExamplePlugin).Assembly.Location);
+            assembly.CopyTo(entry);
+        }
+
+        string store = Path.Combine(root, "store");
+        using PluginRuntimeManager runtime = new(new PluginInstaller(store));
+        PluginOperationResult installed = runtime.Install(packagePath);
+        Assert(installed.Success, "sample install should succeed: " + installed.Message);
+        Assert(runtime.List().Count == 1 && !runtime.List()[0].Enabled, "new plugin should be disabled");
+        PluginOperationResult enabled = await runtime.EnableAsync("example.plugin");
+        Assert(enabled.Success && runtime.IsRunning("example.plugin"),
+            "sample plugin should initialize and enable: " + enabled.Message);
+        Assert(runtime.GetActions().Any(action => action.Item.Id == "log_capture"),
+            "enabled plugin should register its action");
+        PluginOperationResult disabled = await runtime.DisableAsync("example.plugin");
+        Assert(disabled.Success && !runtime.IsRunning("example.plugin") && runtime.GetActions().Count == 0,
+            "disabled plugin should remove actions");
+        string installedManifest = Path.Combine(store, "installed", "example.plugin", "manifest.json");
+        PluginManifest incompatible = PluginManifestService.Load(installedManifest);
+        incompatible.Requires.AppVersion = ">=99.0.0";
+        File.WriteAllText(installedManifest, PluginManifestJson.Serialize(incompatible));
+        Assert(runtime.List().Count == 1 && !runtime.List()[0].Compatible,
+            "incompatible installed plugin should remain visible for removal");
+        Assert(!(await runtime.EnableAsync("example.plugin")).Success,
+            "incompatible installed plugin should not load");
+        PluginOperationResult removed = await runtime.RemoveAsync("example.plugin");
+        Assert(removed.Success && runtime.List().Count == 0, "plugin should uninstall cleanly");
     }
 
     private static async Task TestUpdateResponseValidationAsync()

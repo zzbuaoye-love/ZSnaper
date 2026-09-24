@@ -1,7 +1,10 @@
 using System.Drawing.Drawing2D;
 using System.Globalization;
+using SharpHook;
+using SharpHook.Data;
 using SkiaSharp;
 using ZSnaper.Helpers;
+using ZSnaper.Interop;
 using ZSnaper.Models;
 using ZSnaper.Services;
 
@@ -62,14 +65,24 @@ public class OverlayForm : Form
     private readonly SkiaRasterLayer _styleBarLayer = new();
     private int _styleBarRenderKey = int.MinValue;
     private bool _resourcesDisposed;
+    private volatile bool _preserveForeground;
+    private volatile bool _captureOverlayVisible;
+    private HotkeyService? _hotkeyService;
+    private readonly HashSet<KeyCode> _suppressedCaptureKeys = [];
     private static readonly Font SizeLabelFont = new("Segoe UI", 8.5f, FontStyle.Bold);
 
     public event Action<Bitmap, Point, CaptureCompletionAction>? Captured;
     public event Action<string>? CaptureFailed;
+    public bool PreservesForeground => _preserveForeground;
+
+    public void AttachHotkeyService(HotkeyService hotkeyService) => _hotkeyService = hotkeyService;
+
+    protected override bool ShowWithoutActivation => _preserveForeground;
 
     public OverlayForm()
     {
         FormBorderStyle = FormBorderStyle.None;
+        AutoScaleMode = AutoScaleMode.None;
         StartPosition = FormStartPosition.Manual;
         ShowInTaskbar = false;
         TopMost = true;
@@ -94,15 +107,18 @@ public class OverlayForm : Form
         ThemeManager.ThemeChanged += OnThemeChanged;
     }
 
-    public void BeginCapture()
+    public void BeginCapture() => BeginCapture(preserveForeground: false);
+
+    public void BeginCapture(bool preserveForeground)
     {
+        StopCaptureKeyboardRouting();
+        _preserveForeground = preserveForeground;
         _captureSessionVersion++;
         _scrollCaptureForm?.CancelFromOwner();
         _scrollCaptureForm = null;
 
         Rectangle virtualScreen = SystemInformation.VirtualScreen;
-        Location = virtualScreen.Location;
-        Size = virtualScreen.Size;
+        Bounds = virtualScreen;
 
         CapturedCursor? nextCursor = null;
         Bitmap? nextScreen = null;
@@ -143,15 +159,130 @@ public class OverlayForm : Form
         _showStyleBar = false;
         Cursor = Cursors.Cross;
 
-        Show();
-        Activate();
+        ShowCaptureOverlay();
         UpdateSmartSelection(PointToClient(System.Windows.Forms.Cursor.Position));
         Invalidate();
+    }
+
+    protected override void WndProc(ref Message message)
+    {
+        if (_preserveForeground && message.Msg == NativeMethods.WM_MOUSEACTIVATE)
+        {
+            message.Result = NativeMethods.MA_NOACTIVATE;
+            return;
+        }
+
+        base.WndProc(ref message);
+    }
+
+    protected override void OnVisibleChanged(EventArgs e)
+    {
+        base.OnVisibleChanged(e);
+        _captureOverlayVisible = Visible;
+        if (!Visible) StopCaptureKeyboardRouting();
+    }
+
+    private void ShowCaptureOverlay()
+    {
+        if (_preserveForeground) StartCaptureKeyboardRouting();
+
+        Show();
+        if (!_preserveForeground) Activate();
+    }
+
+    private void StartCaptureKeyboardRouting()
+    {
+        StopCaptureKeyboardRouting();
+        _hotkeyService?.BeginCaptureKeyboardRouting(OnCaptureKeyPressed, OnCaptureKeyReleased);
+    }
+
+    private void StopCaptureKeyboardRouting()
+    {
+        _hotkeyService?.EndCaptureKeyboardRouting();
+        lock (_suppressedCaptureKeys) _suppressedCaptureKeys.Clear();
+    }
+
+    private void EnableOverlayTextInput()
+    {
+        if (!_preserveForeground) return;
+        StopCaptureKeyboardRouting();
+        _preserveForeground = false;
+        Activate();
+    }
+
+    private void OnCaptureKeyPressed(object? sender, KeyboardHookEventArgs e)
+    {
+        if (!_preserveForeground || !_captureOverlayVisible || e.IsEventSimulated ||
+            !TryGetCaptureShortcut(e.Data.KeyCode, out Keys shortcut))
+        {
+            return;
+        }
+
+        bool firstPress;
+        lock (_suppressedCaptureKeys)
+        {
+            firstPress = _suppressedCaptureKeys.Add(e.Data.KeyCode);
+        }
+        e.SuppressEvent = true;
+        if (!firstPress) return;
+
+        try
+        {
+            BeginInvoke(() =>
+            {
+                if (!Visible || IsDisposed) return;
+                if (shortcut == (Keys.Alt | Keys.F4)) CancelCapture();
+                else OnKeyDown(new KeyEventArgs(shortcut));
+            });
+        }
+        catch (InvalidOperationException) { }
+    }
+
+    private void OnCaptureKeyReleased(object? sender, KeyboardHookEventArgs e)
+    {
+        lock (_suppressedCaptureKeys)
+        {
+            if (_suppressedCaptureKeys.Remove(e.Data.KeyCode)) e.SuppressEvent = true;
+        }
+    }
+
+    private static bool TryGetCaptureShortcut(KeyCode key, out Keys shortcut)
+    {
+        bool control = (NativeMethods.GetAsyncKeyState(0x11) & 0x8000) != 0;
+        bool alt = (NativeMethods.GetAsyncKeyState(0x12) & 0x8000) != 0;
+        bool shift = (NativeMethods.GetAsyncKeyState(0x10) & 0x8000) != 0;
+        Keys modifiers = (control ? Keys.Control : Keys.None) |
+                         (alt ? Keys.Alt : Keys.None) |
+                         (shift ? Keys.Shift : Keys.None);
+
+        shortcut = key switch
+        {
+            KeyCode.VcEscape => modifiers | Keys.Escape,
+            KeyCode.VcEnter or KeyCode.VcNumPadEnter => modifiers | Keys.Enter,
+            KeyCode.VcBackQuote => modifiers | Keys.Oemtilde,
+            KeyCode.VcF4 when alt => modifiers | Keys.F4,
+            KeyCode.VcC when control => modifiers | Keys.C,
+            KeyCode.VcS when control => modifiers | Keys.S,
+            KeyCode.VcP when control => modifiers | Keys.P,
+            KeyCode.VcZ when control => modifiers | Keys.Z,
+            KeyCode.VcR when modifiers == Keys.None => Keys.R,
+            KeyCode.VcP when modifiers == Keys.None => Keys.P,
+            KeyCode.VcA when modifiers == Keys.None => Keys.A,
+            KeyCode.VcT when modifiers == Keys.None => Keys.T,
+            KeyCode.VcM when modifiers == Keys.None => Keys.M,
+            _ => Keys.None
+        };
+        return shortcut != Keys.None;
     }
 
     protected override void OnMouseDown(MouseEventArgs e)
     {
         base.OnMouseDown(e);
+        if (e.Button == MouseButtons.Right && _preserveForeground)
+        {
+            CancelCapture();
+            return;
+        }
         if (e.Button != MouseButtons.Left) return;
 
         if (_hasSelection)
@@ -685,6 +816,7 @@ public class OverlayForm : Form
         if (_resourcesDisposed) return;
         _resourcesDisposed = true;
 
+        StopCaptureKeyboardRouting();
         ThemeManager.ThemeChanged -= OnThemeChanged;
         _inlineCaretTimer.Stop();
         _inlineCaretTimer.Dispose();
@@ -790,8 +922,7 @@ public class OverlayForm : Form
         {
             if (sessionVersion != _captureSessionVersion || IsDisposed) return;
             _scrollCaptureForm = null;
-            Show();
-            Activate();
+            ShowCaptureOverlay();
             Invalidate();
             CaptureFailed?.Invoke("长截图失败：" + ex.Message);
         }
@@ -960,6 +1091,7 @@ public class OverlayForm : Form
     private void BeginInlineText(Point point)
     {
         CommitInlineText();
+        EnableOverlayTextInput();
         using Font font = CreateAnnotationFont();
         Color color = GetAnnotationColor();
 
@@ -1304,7 +1436,8 @@ public class OverlayForm : Form
     {
         if (!_hasSelection) return Rectangle.Empty;
 
-        int toolbarWidth = GetToolbarWidth();
+        int toolbarWidth = Math.Min(GetToolbarWidth(), Math.Max(1, ClientSize.Width - 16));
+        int toolbarHeight = ToolbarHeight * GetToolbarRowCount(toolbarWidth);
         ToolbarPlacementMode placement = ResolveToolbarPlacement();
         int preferredX = placement switch
         {
@@ -1314,16 +1447,34 @@ public class OverlayForm : Form
         };
         int x = Math.Clamp(preferredX, 8, Math.Max(8, ClientSize.Width - toolbarWidth - 8));
         int below = _selection.Bottom + 10;
-        int y = below + ToolbarHeight <= ClientSize.Height - 8
+        int y = below + toolbarHeight <= ClientSize.Height - 8
             ? below
-            : _selection.Top - ToolbarHeight - 10;
-        y = Math.Clamp(y, 8, Math.Max(8, ClientSize.Height - ToolbarHeight - 8));
-        return new Rectangle(x, y, toolbarWidth, ToolbarHeight);
+            : _selection.Top - toolbarHeight - 10;
+        y = Math.Clamp(y, 8, Math.Max(8, ClientSize.Height - toolbarHeight - 8));
+        return new Rectangle(x, y, toolbarWidth, toolbarHeight);
     }
 
     private static int GetToolbarWidth() =>
         54 + GetConfiguredToolbarItems().Sum(item =>
             (item == CaptureToolbarItem.Confirm ? 38 : ToolbarButtonSize) + ToolbarGap);
+
+    private static int GetToolbarRowCount(int width)
+    {
+        int rows = 1;
+        int x = 46;
+        int rowStart = x;
+        foreach (CaptureToolbarItem item in GetConfiguredToolbarItems())
+        {
+            int buttonWidth = item == CaptureToolbarItem.Confirm ? 38 : ToolbarButtonSize;
+            if (x + buttonWidth > width - 8 && x > rowStart)
+            {
+                rows++;
+                x = rowStart = 8;
+            }
+            x += buttonWidth + ToolbarGap;
+        }
+        return rows;
+    }
 
     private static CaptureToolbarItem[] GetConfiguredToolbarItems()
     {
@@ -1383,6 +1534,7 @@ public class OverlayForm : Form
 
         int y = toolbar.Top + (ToolbarHeight - ToolbarButtonSize) / 2;
         int x = toolbar.Left + 46;
+        int rowStart = x;
         var buttons = new List<ToolbarButton>();
 
         void Add(
@@ -1392,6 +1544,11 @@ public class OverlayForm : Form
             int width = ToolbarButtonSize,
             bool primary = false)
         {
+            if (x + width > toolbar.Right - 8 && x > rowStart)
+            {
+                x = rowStart = toolbar.Left + 8;
+                y += ToolbarHeight;
+            }
             buttons.Add(new ToolbarButton(
                 action,
                 new Rectangle(x, y, width, ToolbarButtonSize),
@@ -2067,7 +2224,7 @@ public class OverlayForm : Form
 
         LogoRenderer.DrawLogo(graphics, bounds.Left + 11, bounds.Top + 12, 20, palette.TextPrimary);
         Color subtleSeparator = WithAlpha(palette.TextSecondary, 80);
-        DrawSeparator(graphics, bounds.Left + 37, bounds.Top + 16, bounds.Bottom - 16, subtleSeparator);
+        DrawSeparator(graphics, bounds.Left + 37, bounds.Top + 16, bounds.Top + ToolbarHeight - 16, subtleSeparator);
 
         foreach (ToolbarButton button in GetToolbarButtons())
         {
@@ -2576,6 +2733,7 @@ public class OverlayForm : Form
     {
         EnsureStyleValueEditor();
         if (_styleValueEditor is null) return;
+        EnableOverlayTextInput();
 
         _editingStyleValue = kind;
         (_, _, float value) = GetStyleSliderValues(kind);

@@ -1,0 +1,15 @@
+{
+  "manifestVersion": 1,
+  "id": "example.plugin",
+  "name": "Example Plugin",
+  "description": "演示截图事件与截图完成后的插件动作。",
+  "version": "1.0.0",
+  "entry": {
+    "assembly": "Example.Plugin.dll",
+    "type": "Example.Plugin.ExamplePlugin"
+  },
+  "requires": {
+    "pluginApi": ">=1.0.0 <2.0.0",
+    "appVersion": ">=0.0.5"
+  }
+}

@@ -19,6 +19,8 @@ internal static partial class NativeMethods
     public const uint VK_X = 0x58;
 
     public const int WM_HOTKEY = 0x0312;
+    public const int WM_MOUSEACTIVATE = 0x0021;
+    public const int MA_NOACTIVATE = 3;
     public const int WM_NCLBUTTONDOWN = 0x00A1;
     public const int HTCAPTION = 0x0002;
     public const int GWL_EXSTYLE = -20;
@@ -93,6 +95,9 @@ internal static partial class NativeMethods
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool SetForegroundWindow(nint hWnd);
+
+    [LibraryImport("user32.dll")]
+    public static partial nint GetForegroundWindow();
 
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

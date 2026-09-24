@@ -12,5 +12,6 @@
     <Compile Remove="VisualQa\**\*.cs" />
     <Compile Remove="Stability\**\*.cs" />
     <ProjectReference Include="..\..\ZSnaper.csproj" />
+    <ProjectReference Include="..\..\samples\Example.Plugin\Example.Plugin.csproj" />
   </ItemGroup>
 </Project>

@@ -1,8 +1,8 @@
 namespace ZSnaper.Plugins;
 
 /// <summary>
-/// Plugin storage locations. Directory creation is intentionally explicit so
-/// the disabled plugin feature never changes the user's filesystem by itself.
+/// Plugin storage locations. Directories are created only when installing a
+/// package or opening the installed-plugin directory.
 /// </summary>
 public static class PluginStorage
 {

@@ -6,13 +6,15 @@ using ZSnaper.Helpers;
 using ZSnaper.Interop;
 using ZSnaper.Models;
 using ZSnaper.Services;
+using ZSnaper.Plugins;
 
 namespace ZSnaper.Forms;
 
-public class MainForm : Form
+public partial class MainForm : Form
 {
     private readonly SkiaRasterLayer _mainSurface = new();
     private bool _mainSurfaceDirty = true;
+    private bool _mainResourcesDisposed;
     private int _currentTabIndex = 0;
     private bool _hasSystemBackdrop;
 
@@ -23,7 +25,7 @@ public class MainForm : Form
 
     // 页面容器
     private readonly Panel _pageContainer;
-    private readonly Panel[] _pages = new Panel[5];
+    private readonly Panel[] _pages = new Panel[6];
     private ModernTextEditor _ocrTextBox = null!;
     private HeroActionCard _captureHeroCard = null!;
     private HeroActionCard _ocrHeroCard = null!;
@@ -81,6 +83,7 @@ public class MainForm : Form
             (LucideIcon.Camera, "截图识别", false),
             (LucideIcon.FileText, "识图工作台", false),
             (LucideIcon.Keyboard, "快捷键", false),
+            (LucideIcon.Grid3X3, "插件管理", false),
             (LucideIcon.Sliders, "偏好设置", true),
             (LucideIcon.Info, "关于软件", true)
         ];
@@ -136,6 +139,8 @@ public class MainForm : Form
         ThemeManager.ThemeChanged += OnThemeChanged;
         Disposed += (_, _) =>
         {
+            if (_mainResourcesDisposed) return;
+            _mainResourcesDisposed = true;
             ThemeManager.ThemeChanged -= OnThemeChanged;
             _welcomeQuoteCancellation.Cancel();
             _welcomeQuoteCancellation.Dispose();
@@ -268,8 +273,9 @@ public class MainForm : Form
         _pages[0] = CreateCapturePage();
         _pages[1] = CreateOcrStudioPage();
         _pages[2] = CreateHotkeysPage();
-        _pages[3] = CreateSettingsPage();
-        _pages[4] = CreateAboutPage();
+        _pages[3] = CreatePluginsPage();
+        _pages[4] = CreateSettingsPage();
+        _pages[5] = CreateAboutPage();
 
         _pageContainer.SuspendLayout();
         for (int index = 0; index < _pages.Length; index++)
@@ -1435,7 +1441,7 @@ public class MainForm : Form
         };
 
         // 系统：托盘交互与更新设置集中管理。
-        var systemCard = CreateSettingsCard(468);
+        var systemCard = CreateSettingsCard(520);
         var trayActionOptions = new[]
         {
             (Action: TrayClickAction.OpenMainWindow, Label: "打开主界面"),
@@ -1639,14 +1645,33 @@ public class MainForm : Form
         var rowNotify = new SettingItemRow
         {
             Title = "操作完成状态气泡",
-            Description = string.Empty,
-            ShowDivider = false,
+            Description = "截图和 OCR 完成后显示状态",
+            ShowDivider = true,
             ActionControl = toggleNotify
         };
         rowNotify.SetBounds(0, 416, systemCard.Width, 52);
 
+        var toggleWindowsNotifications = new ModernToggleSwitch
+        {
+            Checked = ConfigService.Current.ShowWindowsNotifications,
+            AccessibleName = "Windows 弹窗通知"
+        };
+        toggleWindowsNotifications.CheckedChanged += (_, _) =>
+        {
+            ConfigService.Current.ShowWindowsNotifications = toggleWindowsNotifications.Checked;
+            ConfigService.Save();
+        };
+        var rowWindowsNotifications = new SettingItemRow
+        {
+            Title = "Windows 弹窗通知",
+            Description = "控制 ZSnaper 的状态、更新和错误通知",
+            ShowDivider = false,
+            ActionControl = toggleWindowsNotifications
+        };
+        rowWindowsNotifications.SetBounds(0, 468, systemCard.Width, 52);
+
         rowTrayLeftClick.Anchor = rowTrayMiddleClick.Anchor = rowChannel.Anchor = rowUpdate.Anchor = _lastUpdateRow.Anchor = rowAutoUpdate.Anchor =
-            rowUpdateInterval.Anchor = rowNotify.Anchor =
+            rowUpdateInterval.Anchor = rowNotify.Anchor = rowWindowsNotifications.Anchor =
             AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
         rowAutoStart.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
         systemCard.Controls.Add(rowTrayLeftClick);
@@ -1658,6 +1683,7 @@ public class MainForm : Form
         systemCard.Controls.Add(rowUpdateInterval);
         systemCard.Controls.Add(rowAutoStart);
         systemCard.Controls.Add(rowNotify);
+        systemCard.Controls.Add(rowWindowsNotifications);
 
         var footerHint = new Label
         {

@@ -53,6 +53,16 @@ internal static class AppDiagnostics
 
     public static void LogException(string source, Exception exception)
     {
+        WriteEntry(source, exception.ToString());
+    }
+
+    public static void LogMessage(string source, string message)
+    {
+        WriteEntry(source, message);
+    }
+
+    private static void WriteEntry(string source, string message)
+    {
         try
         {
             lock (SyncRoot)
@@ -62,7 +72,7 @@ internal static class AppDiagnostics
                 var entry = new StringBuilder()
                     .Append('[').Append(DateTimeOffset.Now.ToString("O")).Append("] ")
                     .AppendLine(source)
-                    .AppendLine(exception.ToString())
+                    .AppendLine(message)
                     .AppendLine(new string('-', 72))
                     .ToString();
                 File.AppendAllText(path, entry, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));

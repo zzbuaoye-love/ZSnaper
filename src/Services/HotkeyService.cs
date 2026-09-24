@@ -37,6 +37,8 @@ public class HotkeyService : NativeWindow, IDisposable
     private readonly Dictionary<HotkeyCommand, HotkeyState> _states;
     private int _nextRegistrationId = 100;
     private SimpleGlobalHook? _keyboardHook;
+    private EventHandler<KeyboardHookEventArgs>? _captureKeyPressed;
+    private EventHandler<KeyboardHookEventArgs>? _captureKeyReleased;
     private readonly HashSet<KeyCode> _pressedKeys = [];
     private readonly HashSet<KeyCode> _suppressedKeys = [];
     private HotkeyCommand? _recordingCommand;
@@ -351,8 +353,31 @@ public class HotkeyService : NativeWindow, IDisposable
 
     private void ReleaseKeyboardHookIfUnused()
     {
-        if (_keyboardHook is null || _states.Values.Any(state => state.ForceBinding && state.Gesture is not null)) return;
+        if (_keyboardHook is null || _captureKeyPressed is not null ||
+            _states.Values.Any(state => state.ForceBinding && state.Gesture is not null)) return;
         DisposeKeyboardHook();
+    }
+
+    public bool BeginCaptureKeyboardRouting(
+        EventHandler<KeyboardHookEventArgs> onPressed,
+        EventHandler<KeyboardHookEventArgs> onReleased)
+    {
+        if (!EnsureKeyboardHook(out int errorCode))
+        {
+            AppDiagnostics.LogException("HotkeyService.CaptureKeyboardRouting",
+                new InvalidOperationException($"无法启动截图键盘监听（错误码 {errorCode}）"));
+            return false;
+        }
+        Volatile.Write(ref _captureKeyReleased, onReleased);
+        Volatile.Write(ref _captureKeyPressed, onPressed);
+        return true;
+    }
+
+    public void EndCaptureKeyboardRouting()
+    {
+        Volatile.Write(ref _captureKeyPressed, null);
+        Volatile.Write(ref _captureKeyReleased, null);
+        ReleaseKeyboardHookIfUnused();
     }
 
     private bool EnsureKeyboardHook(out int errorCode)
@@ -428,6 +453,13 @@ public class HotkeyService : NativeWindow, IDisposable
             e.SuppressEvent = true;
             return;
         }
+        EventHandler<KeyboardHookEventArgs>? captureHandler = Volatile.Read(ref _captureKeyPressed);
+        if (captureHandler is not null)
+        {
+            captureHandler(this, e);
+            if (e.SuppressEvent) _suppressedKeys.Add(keyCode);
+            return;
+        }
         if (_recordingCommand is not null) return;
         if (TryGetForceCommand(keyCode, out HotkeyCommand command))
         {
@@ -444,6 +476,7 @@ public class HotkeyService : NativeWindow, IDisposable
         bool suppress = _suppressedKeys.Remove(keyCode);
         _pressedKeys.Remove(keyCode);
         if (suppress) e.SuppressEvent = true;
+        Volatile.Read(ref _captureKeyReleased)?.Invoke(this, e);
     }
 
     private HotkeyGesture CreateGestureFromPressedKeys(KeyCode keyCode)

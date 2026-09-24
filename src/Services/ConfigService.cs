@@ -36,6 +36,7 @@ public class AppConfig
     public bool AutoSavePictures { get; set; } = true;
     public bool AutoCleanOcrParagraphs { get; set; } = true;
     public bool ShowNotification { get; set; } = true;
+    public bool ShowWindowsNotifications { get; set; } = true;
     public ToolbarPlacementMode ToolbarPlacement { get; set; } = ToolbarPlacementMode.Auto;
     public double ToolbarAutoHorizontalBias { get; set; } = 0.78d;
     public int ToolbarAutoSampleCount { get; set; }

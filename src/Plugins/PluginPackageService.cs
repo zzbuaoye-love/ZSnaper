@@ -16,12 +16,13 @@ public sealed record PluginPackageInspection(
 
 /// <summary>
 /// Reads and validates a .zsp package without extracting, loading, or
-/// executing any plugin code. Runtime discovery remains disabled for now.
+/// executing plugin code. Installation and execution are separate steps.
 /// </summary>
 public static class PluginPackageService
 {
     private const int MaxFileCount = 4096;
     private const long MaxUncompressedSize = 512L * 1024 * 1024;
+    private const long MaxManifestSize = 1024 * 1024;
 
     public static PluginPackageInspection Inspect(
         string packagePath,
@@ -97,9 +98,23 @@ public static class PluginPackageService
             }
             else
             {
+                if (manifestEntry.Length > MaxManifestSize)
+                {
+                    errors.Add("Plugin manifest is too large.");
+                    return new PluginPackageInspection(normalizedPath, null, files, errors, uncompressedSize);
+                }
                 using Stream stream = manifestEntry.Open();
-                using StreamReader reader = new(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-                manifest = PluginManifestJson.Deserialize(reader.ReadToEnd());
+                using MemoryStream content = new();
+                byte[] buffer = new byte[16 * 1024];
+                int read;
+                while ((read = stream.Read(buffer)) != 0)
+                {
+                    if (read > MaxManifestSize - content.Length)
+                        throw new InvalidDataException("Plugin manifest is too large.");
+                    content.Write(buffer, 0, read);
+                }
+                manifest = PluginManifestJson.Deserialize(
+                    Encoding.UTF8.GetString(content.ToArray()).TrimStart('\uFEFF'));
                 errors.AddRange(PluginManifestService.Validate(manifest, appVersion, apiVersion));
                 if (manifest.Entry is not null)
                 {
@@ -161,7 +176,7 @@ public static class PluginPackageService
     private static string NormalizeEntryName(string entryName) =>
         entryName.Replace('\\', '/');
 
-    private static bool IsSafeEntryName(string entryName)
+    internal static bool IsSafeEntryName(string entryName)
     {
         if (string.IsNullOrWhiteSpace(entryName) ||
             entryName.Contains('\0') ||
@@ -171,10 +186,24 @@ public static class PluginPackageService
             return false;
         }
 
-        string[] parts = entryName.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        string[] parts = entryName.Split('/');
         return parts.Length > 0 &&
                parts.All(part =>
+                   !string.IsNullOrWhiteSpace(part) &&
                    part is not "." and not ".." &&
-                   part.IndexOfAny(Path.GetInvalidFileNameChars()) < 0);
+                   !part.EndsWith(' ') && !part.EndsWith('.') &&
+                   part.IndexOfAny(Path.GetInvalidFileNameChars()) < 0 &&
+                   !IsReservedWindowsName(part));
+    }
+
+    private static bool IsReservedWindowsName(string part)
+    {
+        string stem = part.Split('.', 2)[0];
+        return stem.Equals("CON", StringComparison.OrdinalIgnoreCase) ||
+               stem.Equals("PRN", StringComparison.OrdinalIgnoreCase) ||
+               stem.Equals("AUX", StringComparison.OrdinalIgnoreCase) ||
+               stem.Equals("NUL", StringComparison.OrdinalIgnoreCase) ||
+               stem.Length == 4 && stem.StartsWith("COM", StringComparison.OrdinalIgnoreCase) && stem[3] is >= '1' and <= '9' ||
+               stem.Length == 4 && stem.StartsWith("LPT", StringComparison.OrdinalIgnoreCase) && stem[3] is >= '1' and <= '9';
     }
 }

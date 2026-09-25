@@ -11,8 +11,23 @@ public enum AnimationLevel
     Elegant    // 极度优雅：丝滑流体 (~320ms)
 }
 
+public enum ConfigStorageLocation
+{
+    UserData,
+    ApplicationDirectory
+}
+
+public enum AppLogLevel
+{
+    Debug,
+    Information,
+    Warning,
+    Error
+}
+
 public class AppConfig
 {
+    public AppLogLevel LogLevel { get; set; } = AppLogLevel.Information;
     public ThemeMode Theme { get; set; } = ThemeMode.Light;
     public AnimationLevel AnimationMode { get; set; } = AnimationLevel.Balanced;
     public bool EnableGlowEffect { get; set; } = true;
@@ -82,12 +97,13 @@ public static class ConfigService
     private const string StartupRegistryPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string StartupValueName = "ZSnaper";
     private const string StartupArgument = "--startup";
-    private static readonly string ConfigPath = Path.Combine(
+    private static readonly string UserConfigPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "ZSnaper",
         "config.json");
-    private static readonly string BackupPath = ConfigPath + ".bak";
-    private static readonly string InvalidPath = ConfigPath + ".corrupt";
+    private static readonly string ApplicationConfigDirectory = Path.Combine(GetApplicationDirectory(), "config");
+    private static readonly string ApplicationConfigPath = Path.Combine(ApplicationConfigDirectory, "config.json");
+    private static readonly string ApplicationModeMarker = Path.Combine(ApplicationConfigDirectory, ".active");
     private static readonly object SyncRoot = new();
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -97,6 +113,9 @@ public static class ConfigService
     };
 
     public static AppConfig Current { get; private set; } = new();
+    public static ConfigStorageLocation StorageLocation { get; private set; } = ConfigStorageLocation.UserData;
+    public static string ActiveConfigPath => GetPath(StorageLocation);
+    public static string ActiveConfigDirectory => Path.GetDirectoryName(ActiveConfigPath)!;
 
     public static event Action? ConfigChanged;
 
@@ -109,15 +128,26 @@ public static class ConfigService
     {
         lock (SyncRoot)
         {
+            StorageLocation = ConfigLocationStore.Resolve(ApplicationModeMarker);
+            string configPath = ActiveConfigPath;
             bool recoveredFromBackup = false;
-            if (ConfigFileStore.TryRead(ConfigPath, JsonOptions, out AppConfig loaded))
+            if (ConfigFileStore.TryRead(configPath, JsonOptions, out AppConfig loaded))
             {
                 Current = loaded;
             }
-            else if (ConfigFileStore.TryRead(BackupPath, JsonOptions, out loaded))
+            else if (ConfigFileStore.TryRead(configPath + ".bak", JsonOptions, out loaded))
             {
                 Current = loaded;
                 recoveredFromBackup = true;
+            }
+            else if (StorageLocation == ConfigStorageLocation.ApplicationDirectory &&
+                     ConfigFileStore.TryRead(UserConfigPath, JsonOptions, out loaded))
+            {
+                StorageLocation = ConfigStorageLocation.UserData;
+                Current = loaded;
+                AppDiagnostics.LogMessage("ConfigService.Load", "Application configuration was unavailable; loaded user data configuration.", Serilog.Events.LogEventLevel.Warning);
+                try { File.Delete(ApplicationModeMarker); }
+                catch (Exception exception) { AppDiagnostics.LogException("ConfigService.LoadMarker", exception); }
             }
             else
             {
@@ -125,6 +155,7 @@ public static class ConfigService
             }
 
             AppConfigSanitizer.Normalize(Current);
+            AppDiagnostics.SetMinimumLevel(Current.LogLevel);
             // 注册表是开机启动的真实来源，配置文件只负责保存 UI 状态。
             Current.AutoStartOnBoot = IsAutoStartEnabled();
 
@@ -144,10 +175,13 @@ public static class ConfigService
             {
                 AppConfigSanitizer.Normalize(Current);
                 string json = JsonSerializer.Serialize(Current, JsonOptions);
-                ConfigFileStore.WriteAtomic(ConfigPath, json, BackupPath, backupExisting: true);
+                string path = ActiveConfigPath;
+                ConfigFileStore.WriteAtomic(path, json, path + ".bak", backupExisting: true);
             }
 
             saved = true;
+            AppDiagnostics.SetMinimumLevel(Current.LogLevel);
+            AppDiagnostics.LogMessage("Config.Save", "配置已保存", Serilog.Events.LogEventLevel.Debug);
         }
         catch (Exception exception)
         {
@@ -157,6 +191,61 @@ public static class ConfigService
 
         if (saved) NotifyConfigChanged();
         return saved;
+    }
+
+    public static bool TrySetStorageLocation(ConfigStorageLocation location, out string error)
+    {
+        error = string.Empty;
+        if (!Enum.IsDefined(location))
+        {
+            error = "无效的配置存放位置。";
+            return false;
+        }
+
+        lock (SyncRoot)
+        {
+            if (location == StorageLocation) return true;
+            try
+            {
+                AppConfigSanitizer.Normalize(Current);
+                string destination = GetPath(location);
+                string json = JsonSerializer.Serialize(Current, JsonOptions);
+                ConfigLocationStore.Switch(location, destination, ApplicationModeMarker, json);
+
+                StorageLocation = location;
+                AppDiagnostics.LogMessage("ConfigService.StorageLocation", $"Configuration moved to {destination}.");
+            }
+            catch (Exception exception)
+            {
+                AppDiagnostics.LogException("ConfigService.StorageLocation", exception);
+                error = exception is UnauthorizedAccessException
+                    ? "目标目录不可写，请检查程序安装目录的权限。"
+                    : $"切换配置目录失败：{exception.Message}";
+                return false;
+            }
+        }
+
+        NotifyConfigChanged();
+        return true;
+    }
+
+    private static string GetPath(ConfigStorageLocation location) =>
+        location == ConfigStorageLocation.ApplicationDirectory ? ApplicationConfigPath : UserConfigPath;
+
+    private static string GetApplicationDirectory()
+    {
+        string directory = Path.GetFullPath(AppContext.BaseDirectory);
+        string root = Path.GetPathRoot(directory) ?? string.Empty;
+        if (!string.Equals(directory.TrimEnd(Path.DirectorySeparatorChar),
+                root.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase))
+        {
+            directory = directory.TrimEnd(Path.DirectorySeparatorChar);
+        }
+        string name = Path.GetFileName(directory);
+        return name.Equals("app", StringComparison.OrdinalIgnoreCase) ||
+               name.Equals("runtime", StringComparison.OrdinalIgnoreCase)
+            ? Directory.GetParent(directory)?.FullName ?? directory
+            : directory;
     }
 
     public static string GetEffectiveSavePath()
@@ -251,9 +340,10 @@ public static class ConfigService
     {
         try
         {
-            if (File.Exists(ConfigPath)) File.Copy(ConfigPath, InvalidPath, overwrite: true);
+            string path = ActiveConfigPath;
+            if (File.Exists(path)) File.Copy(path, path + ".corrupt", overwrite: true);
             string json = JsonSerializer.Serialize(Current, JsonOptions);
-            ConfigFileStore.WriteAtomic(ConfigPath, json, BackupPath, backupExisting: false);
+            ConfigFileStore.WriteAtomic(path, json, path + ".bak", backupExisting: false);
         }
         catch (Exception exception)
         {

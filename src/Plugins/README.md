@@ -6,6 +6,9 @@ Installed plugins start disabled. Enabling a plugin runs its .NET assembly in
 the ZSnaper process, with the same Windows permissions as ZSnaper. Only enable
 packages you trust. The load context supports unloading managed assemblies;
 it is **not a sandbox**.
+Managed plugin assemblies are loaded from streams so Windows can remove their
+files after disable. `Assembly.Location` may therefore be empty; embed assets
+that the plugin needs at runtime instead of resolving them from that property.
 
 The page can enable, disable, and uninstall a plugin. Enabled plugins are
 reloaded when ZSnaper starts. If initialization fails, the plugin is disabled

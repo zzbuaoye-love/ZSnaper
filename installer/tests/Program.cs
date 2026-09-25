@@ -32,6 +32,11 @@ internal static class Program
                 throw new InvalidDataException("The embedded payload does not contain update\\Update.exe.");
             }
 
+            if (File.Exists(InstallerPaths.GetSetupExecutablePath(extracted)))
+            {
+                throw new InvalidDataException("The embedded payload contains an unnecessary full setup executable.");
+            }
+
             if (!Directory.Exists(Path.Combine(extracted, "langs", "zh-Hans")) ||
                 Directory.Exists(Path.Combine(extracted, "zh-Hans")))
             {
@@ -45,9 +50,14 @@ internal static class Program
 
         UpdateManifest manifest = new UpdatePackageService().ReadManifest(updatePath);
         if (!string.Equals(manifest.Format, "zsnaper-update-1", StringComparison.Ordinal) ||
-            !string.Equals(manifest.To, "0.0.5-beta", StringComparison.OrdinalIgnoreCase))
+            !string.Equals(manifest.From, "0.0.5-beta", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(manifest.To, "0.0.6-beta", StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidDataException("The update manifest did not pass the smoke test.");
+        }
+        if (!manifest.Delete.Contains("update/ZSnaper-Setup.exe", StringComparer.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException("The update does not remove the legacy full setup executable.");
         }
 
         Console.WriteLine($"Smoke test passed. Payload offset={offset}, length={length}, changed={manifest.Files.Count}, deleted={manifest.Delete.Count}.");

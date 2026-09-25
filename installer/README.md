@@ -1,6 +1,6 @@
 # ZSnaper installer
 
-This directory contains the handwritten Windows installer for version 0.0.5.
+This directory contains the handwritten Windows installer for version 0.0.6.
 It uses .NET BCL, WinForms, the Windows registry, and the built-in WScript.Shell
 shortcut COM API. It does not use Inno Setup, WiX, Squirrel, Velopack, or any
 other installer framework.
@@ -25,7 +25,7 @@ installer/
 Run this from the repository root:
 
 ```powershell
-.\installer\scripts\Build-Installers.ps1 -Version 0.0.5-beta
+.\installer\scripts\Build-Installers.ps1 -Version 0.0.6-beta
 ```
 
 The full installer is published self-contained, then an application ZIP is
@@ -37,19 +37,28 @@ directory for the previous release:
 
 ```powershell
 .\installer\scripts\Build-Installers.ps1 `
-  -Version 0.0.5-beta `
-  -BaseVersion 0.0.4-beta `
-  -BasePayloadDirectory .\artifacts\0.0.4-beta-win-x64
+  -Version 0.0.6-beta `
+  -BaseVersion 0.0.5-beta `
+  -BasePayloadDirectory C:\path\to\published-0.0.5-beta-setup-payload
 ```
+
+Use the payload extracted from the published 0.0.5-beta `Setup.exe`, not a
+local rebuild of that version. The build stops if the selected version differs
+from project metadata or a differential update has no baseline payload.
 
 The resulting `.zup` contains `update.manifest.json`, changed application
 files, SHA-256 hashes, and a delete list. The updater rejects an unexpected
 base version, validates paths and hashes, creates a temporary backup, and
 rolls back changed files if anything fails.
 
-The current update executable is framework-dependent to keep its distribution
-small; the target machine needs the .NET 8 Desktop Runtime. The `.zup` itself
-contains only changed application files and metadata.
+Installed applications keep only `update/Update.exe` in the `update` directory.
+The Windows uninstall entry runs that executable with `--uninstall`; it copies
+itself to a temporary directory before removing the installation. New update
+packages remove the legacy `update/ZSnaper-Setup.exe` from older installs.
+The separate release `Setup.exe` is retained for first-time installation.
+
+The update executable is published self-contained. The `.zup` itself contains
+only changed application files and metadata.
 
 ## Safety rules
 
@@ -65,8 +74,8 @@ contains only changed application files and metadata.
 ## Artifacts
 
 ```text
-ZSnaper-v0.0.5-beta-win-x64-Setup.exe
-ZSnaper-v0.0.5-beta-win-x64-Update.exe
-ZSnaper-v0.0.5-beta-win-x64-Update.zup
+ZSnaper-v0.0.6-beta-win-x64-Setup.exe
+ZSnaper-v0.0.6-beta-win-x64-Update.exe
+ZSnaper-v0.0.6-beta-win-x64-Update.zup
 SHA256SUMS.txt
 ```

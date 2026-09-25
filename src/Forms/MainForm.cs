@@ -1,4 +1,5 @@
 using System.Drawing.Drawing2D;
+using System.Diagnostics;
 using System.Text.Json;
 using SkiaSharp;
 using ZSnaper.Controls;
@@ -1441,7 +1442,7 @@ public partial class MainForm : Form
         };
 
         // 系统：托盘交互与更新设置集中管理。
-        var systemCard = CreateSettingsCard(520);
+        var systemCard = CreateSettingsCard(728);
         var trayActionOptions = new[]
         {
             (Action: TrayClickAction.OpenMainWindow, Label: "打开主界面"),
@@ -1669,11 +1670,132 @@ public partial class MainForm : Form
             ActionControl = toggleWindowsNotifications
         };
         rowWindowsNotifications.SetBounds(0, 468, systemCard.Width, 52);
+        rowWindowsNotifications.ShowDivider = true;
+
+        var configLocationDropdown = new ModernDropdown
+        {
+            Font = new Font("Microsoft YaHei UI", 8f),
+            Size = new Size(126, 28),
+            AccessibleName = "配置存放位置"
+        };
+        configLocationDropdown.SetItems(["用户数据", "程序目录"]);
+        configLocationDropdown.SelectedIndex = ConfigService.StorageLocation == ConfigStorageLocation.ApplicationDirectory ? 1 : 0;
+        bool restoringConfigLocation = false;
+        configLocationDropdown.SelectedIndexChanged += (_, _) =>
+        {
+            if (restoringConfigLocation || configLocationDropdown.SelectedIndex < 0) return;
+            ConfigStorageLocation selected = configLocationDropdown.SelectedIndex == 1
+                ? ConfigStorageLocation.ApplicationDirectory
+                : ConfigStorageLocation.UserData;
+            if (ConfigService.TrySetStorageLocation(selected, out string error)) return;
+
+            restoringConfigLocation = true;
+            configLocationDropdown.SelectedIndex = ConfigService.StorageLocation == ConfigStorageLocation.ApplicationDirectory ? 1 : 0;
+            restoringConfigLocation = false;
+            MessageBox.Show(error, "ZSnaper", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        };
+        var rowConfigLocation = new SettingItemRow
+        {
+            Title = "配置存放位置",
+            Description = "用户数据或程序安装目录下的 config",
+            ActionControl = configLocationDropdown
+        };
+        rowConfigLocation.SetBounds(0, 520, systemCard.Width, 52);
+
+        void OpenSettingsDirectory(string directory)
+        {
+            try
+            {
+                Directory.CreateDirectory(directory);
+                Process.Start(new ProcessStartInfo { FileName = directory, UseShellExecute = true });
+            }
+            catch (Exception exception)
+            {
+                AppDiagnostics.LogException("MainForm.OpenSettingsDirectory", exception);
+                MessageBox.Show($"无法打开目录：{exception.Message}", "ZSnaper", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        ModernButton CreateOpenDirectoryButton(string directoryName, Func<string> getDirectory)
+        {
+            var button = new ModernButton
+            {
+                Text = "打开目录",
+                IsPrimary = false,
+                CornerRadius = 6,
+                Size = new Size(76, 26),
+                AccessibleName = directoryName
+            };
+            button.Click += (_, _) => OpenSettingsDirectory(getDirectory());
+            return button;
+        }
+
+        var rowConfigDirectory = new SettingItemRow
+        {
+            Title = "配置目录",
+            Description = "打开当前生效的配置文件所在目录",
+            ActionControl = CreateOpenDirectoryButton("打开配置目录", () => ConfigService.ActiveConfigDirectory)
+        };
+        rowConfigDirectory.SetBounds(0, 572, systemCard.Width, 52);
+
+        var logLevelOptions = new[]
+        {
+            (Level: AppLogLevel.Debug, Label: "调试"),
+            (Level: AppLogLevel.Information, Label: "信息"),
+            (Level: AppLogLevel.Warning, Label: "警告"),
+            (Level: AppLogLevel.Error, Label: "错误")
+        };
+        var logLevelDropdown = new ModernDropdown
+        {
+            Font = new Font("Microsoft YaHei UI", 8f),
+            Size = new Size(110, 28),
+            AccessibleName = "日志级别"
+        };
+        logLevelDropdown.SetItems(logLevelOptions.Select(option => option.Label));
+        logLevelDropdown.SelectedIndex = Array.FindIndex(logLevelOptions,
+            option => option.Level == ConfigService.Current.LogLevel);
+        bool restoringLogLevel = false;
+        logLevelDropdown.SelectedIndexChanged += (_, _) =>
+        {
+            if (restoringLogLevel || logLevelDropdown.SelectedIndex < 0) return;
+            AppLogLevel previous = ConfigService.Current.LogLevel;
+            AppLogLevel selected = logLevelOptions[logLevelDropdown.SelectedIndex].Level;
+            if (selected == previous) return;
+            ConfigService.Current.LogLevel = selected;
+            if (ConfigService.Save()) return;
+
+            ConfigService.Current.LogLevel = previous;
+            AppDiagnostics.SetMinimumLevel(previous);
+            restoringLogLevel = true;
+            logLevelDropdown.SelectedIndex = Array.FindIndex(logLevelOptions,
+                option => option.Level == previous);
+            restoringLogLevel = false;
+            MessageBox.Show("日志级别保存失败，已恢复原设置。", "ZSnaper",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        };
+        var rowLogLevel = new SettingItemRow
+        {
+            Title = "日志级别",
+            Description = "只记录所选级别及更严重的事件",
+            ActionControl = logLevelDropdown
+        };
+        rowLogLevel.SetBounds(0, 624, systemCard.Width, 52);
+
+        var rowLogDirectory = new SettingItemRow
+        {
+            Title = "运行日志",
+            Description = "打开按日期滚动保存的诊断日志",
+            ShowDivider = false,
+            ActionControl = CreateOpenDirectoryButton("打开日志目录", () => AppDiagnostics.LogDirectory)
+        };
+        rowLogDirectory.SetBounds(0, 676, systemCard.Width, 52);
 
         rowTrayLeftClick.Anchor = rowTrayMiddleClick.Anchor = rowChannel.Anchor = rowUpdate.Anchor = _lastUpdateRow.Anchor = rowAutoUpdate.Anchor =
             rowUpdateInterval.Anchor = rowNotify.Anchor = rowWindowsNotifications.Anchor =
             AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
         rowAutoStart.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+        rowConfigLocation.Anchor = rowConfigDirectory.Anchor = rowLogLevel.Anchor = rowLogDirectory.Anchor =
+            AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
         systemCard.Controls.Add(rowTrayLeftClick);
         systemCard.Controls.Add(rowTrayMiddleClick);
         systemCard.Controls.Add(rowChannel);
@@ -1684,6 +1806,10 @@ public partial class MainForm : Form
         systemCard.Controls.Add(rowAutoStart);
         systemCard.Controls.Add(rowNotify);
         systemCard.Controls.Add(rowWindowsNotifications);
+        systemCard.Controls.Add(rowConfigLocation);
+        systemCard.Controls.Add(rowConfigDirectory);
+        systemCard.Controls.Add(rowLogLevel);
+        systemCard.Controls.Add(rowLogDirectory);
 
         var footerHint = new Label
         {

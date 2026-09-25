@@ -15,6 +15,32 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.Contains("--config-location-smoke", StringComparer.OrdinalIgnoreCase))
+        {
+            TestConfigLocationSwitch();
+            Console.WriteLine("Configuration location smoke test passed.");
+            return 0;
+        }
+
+        if (args.Contains("--logging-smoke", StringComparer.OrdinalIgnoreCase))
+        {
+            TestDiagnosticsLogging();
+            Console.WriteLine("Diagnostics logging smoke test passed.");
+            return 0;
+        }
+
+        if (args.Contains("--settings-layout-smoke", StringComparer.OrdinalIgnoreCase))
+        {
+            if (args.Contains("--light", StringComparer.OrdinalIgnoreCase))
+            {
+                ConfigService.Current.Theme = ThemeMode.Light;
+            }
+            string outputPath = args.Last();
+            TestSettingsLayout(outputPath);
+            Console.WriteLine($"Settings layout smoke test passed: {outputPath}");
+            return 0;
+        }
+
         if (args.Contains("--live-update-download", StringComparer.OrdinalIgnoreCase))
         {
             TestLiveUpdateDownload();
@@ -39,6 +65,139 @@ internal static class Program
         TestPinnedImageRendering();
         Console.WriteLine("Application stability tests passed.");
         return 0;
+    }
+
+    private static void TestConfigLocationSwitch()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "ZSnaper-ConfigLocation-" + Guid.NewGuid().ToString("N"));
+        string userPath = Path.Combine(root, "userdata", "config.json");
+        string applicationPath = Path.Combine(root, "application", "config", "config.json");
+        string marker = Path.Combine(root, "application", "config", ".active");
+        JsonSerializerOptions options = new();
+        try
+        {
+            ConfigFileStore.WriteAtomic(userPath, "{\"OcrApiModel\":\"saved-model\"}", null, backupExisting: false);
+            Assert(ConfigLocationStore.Resolve(marker) == ConfigStorageLocation.UserData, "Default location was not user data.");
+
+            string blockedParent = Path.Combine(root, "blocked-parent");
+            File.WriteAllText(blockedParent, "not a directory");
+            bool rejected = false;
+            try
+            {
+                ConfigLocationStore.Switch(ConfigStorageLocation.ApplicationDirectory,
+                    Path.Combine(blockedParent, "config.json"), marker, "{}");
+            }
+            catch (IOException)
+            {
+                rejected = true;
+            }
+            Assert(rejected && ConfigLocationStore.Resolve(marker) == ConfigStorageLocation.UserData,
+                "A failed move changed the active configuration location.");
+
+            string contents = File.ReadAllText(userPath);
+            ConfigLocationStore.Switch(ConfigStorageLocation.ApplicationDirectory, applicationPath, marker, contents);
+            Assert(ConfigLocationStore.Resolve(marker) == ConfigStorageLocation.ApplicationDirectory, "Application location did not survive a reload.");
+            Assert(ConfigFileStore.TryRead(applicationPath, options, out AppConfig migrated) &&
+                   migrated.OcrApiModel == "saved-model", "Configuration was not copied to the application directory.");
+
+            ConfigLocationStore.Switch(ConfigStorageLocation.UserData, userPath, marker, "{\"OcrApiModel\":\"new-model\"}");
+            Assert(ConfigLocationStore.Resolve(marker) == ConfigStorageLocation.UserData, "Returning to user data did not survive a reload.");
+            Assert(ConfigFileStore.TryRead(userPath, options, out AppConfig restored) &&
+                   restored.OcrApiModel == "new-model", "Latest configuration was not copied back to user data.");
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    private static void TestDiagnosticsLogging()
+    {
+        string marker = "logging-smoke-" + Guid.NewGuid().ToString("N");
+        string testDirectory = Path.Combine(Path.GetTempPath(), "ZSnaper-LoggingSmoke-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            AppDiagnostics.Initialize(testDirectory);
+            AppDiagnostics.LogMessage("Stability", marker);
+            AppDiagnostics.SetMinimumLevel(AppLogLevel.Warning);
+            AppDiagnostics.LogMessage("Stability", marker + "-filtered");
+            AppDiagnostics.LogMessage("Stability", marker + "-warning", Serilog.Events.LogEventLevel.Warning);
+            AppDiagnostics.SetMinimumLevel(AppLogLevel.Information);
+            AppDiagnostics.Shutdown();
+            string[] lines = Directory.EnumerateFiles(testDirectory, "ZSnaper-*.log")
+                .SelectMany(File.ReadLines).ToArray();
+            string? line = lines
+                .FirstOrDefault(value => value.Contains(marker, StringComparison.Ordinal));
+            Assert(line is not null && System.Text.RegularExpressions.Regex.IsMatch(
+                line, @"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} \[INF\] Stability: logging-smoke-"),
+                "The Serilog file sink did not write a readable timestamp and the test event.");
+            Assert(!lines.Any(value => value.Contains(marker + "-filtered", StringComparison.Ordinal)),
+                "The selected warning level did not suppress information events.");
+            Assert(lines.Any(value => value.Contains(marker + "-warning", StringComparison.Ordinal)),
+                "The selected warning level suppressed a warning event.");
+            Console.WriteLine("Log sample: " + line);
+        }
+        finally
+        {
+            if (Directory.Exists(testDirectory)) Directory.Delete(testDirectory, recursive: true);
+        }
+    }
+
+    private static void TestSettingsLayout(string outputPath)
+    {
+        using MainForm form = new();
+        form.StartPosition = FormStartPosition.Manual;
+        form.Location = new Point(-3000, -3000);
+        form.Show();
+        form.SwitchTab(4);
+        Application.DoEvents();
+
+        ModernDropdown? locationDropdown = null;
+        ModernDropdown? logLevelDropdown = null;
+        SettingsTabBar? settingsTabs = null;
+        List<SettingItemRow> settingsRows = [];
+        void Visit(Control parent)
+        {
+            foreach (Control child in parent.Controls)
+            {
+                if (child is ModernDropdown dropdown && dropdown.AccessibleName == "配置存放位置") locationDropdown = dropdown;
+                if (child is ModernDropdown logDropdown && logDropdown.AccessibleName == "日志级别") logLevelDropdown = logDropdown;
+                if (child is SettingsTabBar tabs) settingsTabs = tabs;
+                if (child is SettingItemRow row &&
+                    (row.Title == "配置存放位置" || row.Title == "配置目录" || row.Title == "日志级别" || row.Title == "运行日志"))
+                {
+                    settingsRows.Add(row);
+                }
+                Visit(child);
+            }
+        }
+        Visit(form);
+        Assert(settingsTabs is not null, "The settings tab bar is missing.");
+        settingsTabs!.SelectedIndex = 4;
+        Application.DoEvents();
+        Assert(locationDropdown is not null && logLevelDropdown is not null && settingsRows.Count == 4,
+            "The configuration and logging controls are missing.");
+        Assert(locationDropdown!.Items.Count == 2, "The configuration location chooser must have two options.");
+        Assert(logLevelDropdown!.Items.Count == 4, "The log level chooser must have four options.");
+        Assert(settingsRows.All(row => row.Bounds.Bottom <= row.Parent!.Height), "A settings row exceeds the system card.");
+
+        Control? ancestor = locationDropdown;
+        while (ancestor is not null && ancestor is not ModernScrollPanel) ancestor = ancestor.Parent;
+        Assert(ancestor is ModernScrollPanel, "The settings rows are not inside a scroll panel.");
+        ModernScrollPanel scrollPanel = (ModernScrollPanel)ancestor!;
+        ModernScrollBar scrollBar = scrollPanel.Controls.OfType<ModernScrollBar>().Single();
+        scrollBar.Value = scrollBar.Maximum;
+        DateTime until = DateTime.UtcNow.AddSeconds(1);
+        while (DateTime.UtcNow < until)
+        {
+            Application.DoEvents();
+            Thread.Sleep(15);
+        }
+
+        using Bitmap bitmap = new(form.Width, form.Height);
+        form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, form.Size));
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outputPath))!);
+        bitmap.Save(outputPath);
     }
 
     private static void TestForceHotkeyValidation()
@@ -246,6 +405,7 @@ internal static class Program
         var config = new AppConfig
         {
             Theme = (ThemeMode)999,
+            LogLevel = (AppLogLevel)999,
             AnimationMode = (AnimationLevel)999,
             ToolbarPlacement = (ToolbarPlacementMode)999,
             CaptureToolbarLayout = CaptureToolbarLayout.Custom,
@@ -275,6 +435,7 @@ internal static class Program
         AppConfigSanitizer.Normalize(config);
 
         Assert(config.Theme == ThemeMode.Light, "Invalid theme was not repaired.");
+        Assert(config.LogLevel == AppLogLevel.Information, "Invalid log level was not repaired.");
         Assert(config.AnimationMode == AnimationLevel.Balanced, "Invalid animation mode was not repaired.");
         Assert(config.ToolbarPlacement == ToolbarPlacementMode.Auto, "Invalid toolbar placement was not repaired.");
         Assert(config.ConfirmButtonBehavior == ConfirmButtonBehavior.Copy, "Invalid confirm behavior was not repaired.");
@@ -333,8 +494,8 @@ internal static class Program
         Assert(control.Width == 136 && control.Height == 28, "ChannelSegmentedControl size is incorrect.");
 
         // 4. AppVersionInfo build channel and version
-        Assert(AppVersionInfo.Version == "0.0.5", "AppVersionInfo.Version should be 0.0.5.");
-        Assert(AppVersionInfo.DisplayVersion == "0.0.5-beta", $"AppVersionInfo.DisplayVersion expected 0.0.5-beta, got {AppVersionInfo.DisplayVersion}.");
+        Assert(AppVersionInfo.Version == "0.0.6", "AppVersionInfo.Version should be 0.0.6.");
+        Assert(AppVersionInfo.DisplayVersion == "0.0.6-beta", $"AppVersionInfo.DisplayVersion expected 0.0.6-beta, got {AppVersionInfo.DisplayVersion}.");
         Assert(AppVersionInfo.BuildChannel == "Beta", "AppVersionInfo.BuildChannel should be Beta for prerelease build.");
         Assert(AppVersionInfo.WelcomeChannelLabel == "BETA", "AppVersionInfo.WelcomeChannelLabel should be BETA.");
         Assert(!AppVersionInfo.IsReleaseBuild, "Prerelease build was identified as Release.");

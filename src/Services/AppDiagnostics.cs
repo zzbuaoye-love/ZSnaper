@@ -1,20 +1,44 @@
-using System.Text;
+using Serilog;
+using Serilog.Events;
+using Serilog.Core;
 
 namespace ZSnaper.Services;
 
 internal static class AppDiagnostics
 {
-    private static readonly object SyncRoot = new();
-    private static readonly string LogDirectory = Path.Combine(
+    public static string LogDirectory { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "ZSnaper",
         "Logs");
     private static int _initialized;
     private static int _threadExceptionNoticeShown;
+    private static readonly LoggingLevelSwitch LevelSwitch = new(LogEventLevel.Information);
 
-    public static void Initialize()
+    public static void Initialize(string? logDirectoryOverride = null)
     {
         if (Interlocked.Exchange(ref _initialized, 1) != 0) return;
+
+        try
+        {
+            string logDirectory = logDirectoryOverride ?? LogDirectory;
+            Directory.CreateDirectory(logDirectory);
+            Log.Logger = new LoggerConfiguration()
+                .MinimumLevel.ControlledBy(LevelSwitch)
+                .WriteTo.File(
+                    Path.Combine(logDirectory, "ZSnaper-.log"),
+                    rollingInterval: RollingInterval.Day,
+                    rollOnFileSizeLimit: true,
+                    fileSizeLimitBytes: 10 * 1024 * 1024,
+                    retainedFileCountLimit: 14,
+                    shared: true,
+                    outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
+                .CreateLogger();
+        }
+        catch (Exception exception)
+        {
+            System.Diagnostics.Trace.WriteLine($"ZSnaper file logging initialization failed: {exception}");
+            // Logging must never prevent the application from starting.
+        }
 
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
         Application.ThreadException += (_, args) =>
@@ -48,63 +72,35 @@ internal static class AppDiagnostics
             args.SetObserved();
         };
 
-        PruneOldLogs();
+        SetMinimumLevel(ConfigService.Current.LogLevel);
+        Log.Information("ZSnaper 启动 | 版本: {Version} | 配置目录: {ConfigDirectory}",
+            Helpers.AppVersionInfo.DisplayVersion, ConfigService.ActiveConfigDirectory);
     }
 
-    public static void LogException(string source, Exception exception)
+    public static void SetMinimumLevel(AppLogLevel level)
     {
-        WriteEntry(source, exception.ToString());
+        LevelSwitch.MinimumLevel = level switch
+        {
+            AppLogLevel.Debug => LogEventLevel.Debug,
+            AppLogLevel.Warning => LogEventLevel.Warning,
+            AppLogLevel.Error => LogEventLevel.Error,
+            _ => LogEventLevel.Information
+        };
     }
 
-    public static void LogMessage(string source, string message)
+    public static void LogException(string source, Exception exception, LogEventLevel level = LogEventLevel.Error)
     {
-        WriteEntry(source, message);
+        Log.Write(level, exception, "{Source} failed", source);
     }
 
-    private static void WriteEntry(string source, string message)
+    public static void LogMessage(string source, string message, LogEventLevel level = LogEventLevel.Information)
     {
-        try
-        {
-            lock (SyncRoot)
-            {
-                Directory.CreateDirectory(LogDirectory);
-                string path = Path.Combine(LogDirectory, $"ZSnaper-{DateTime.Now:yyyyMMdd}.log");
-                var entry = new StringBuilder()
-                    .Append('[').Append(DateTimeOffset.Now.ToString("O")).Append("] ")
-                    .AppendLine(source)
-                    .AppendLine(message)
-                    .AppendLine(new string('-', 72))
-                    .ToString();
-                File.AppendAllText(path, entry, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-            }
-        }
-        catch
-        {
-            // Diagnostics are best-effort and must never destabilize the app.
-        }
+        Log.Write(level, "{Source}: {Message}", source, message);
     }
 
-    private static void PruneOldLogs()
+    public static void Shutdown()
     {
-        try
-        {
-            if (!Directory.Exists(LogDirectory)) return;
-            DateTime cutoff = DateTime.UtcNow.AddDays(-14);
-            foreach (string path in Directory.EnumerateFiles(LogDirectory, "ZSnaper-*.log"))
-            {
-                try
-                {
-                    if (File.GetLastWriteTimeUtc(path) < cutoff) File.Delete(path);
-                }
-                catch
-                {
-                    // One locked log must not block cleanup of the rest.
-                }
-            }
-        }
-        catch
-        {
-            // Ignore unavailable log directories.
-        }
+        Log.Information("ZSnaper 退出");
+        Log.CloseAndFlush();
     }
 }

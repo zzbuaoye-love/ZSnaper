@@ -968,6 +968,7 @@ public class OverlayForm : Form
 
     private void CancelCapture()
     {
+        AppDiagnostics.LogMessage("Capture.Cancel", "Capture cancelled by user.", Serilog.Events.LogEventLevel.Debug);
         CancelStyleValueEdit();
         CancelInlineText();
         _dragMode = DragMode.None;

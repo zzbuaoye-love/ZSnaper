@@ -1,10 +1,10 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.0.5-beta",
+    [string]$Version = "0.0.6-beta",
     [string]$Configuration = "Release",
     [string]$Runtime = "win-x64",
     [string]$BasePayloadDirectory = "",
-    [string]$BaseVersion = "0.0.4-beta",
+    [string]$BaseVersion = "0.0.5-beta",
     [switch]$SkipBuild
 )
 
@@ -21,13 +21,30 @@ $installedPayload = Join-Path $workRoot "installed-payload"
 $payloadZip = Join-Path $workRoot "application-payload.zip"
 
 if ([string]::IsNullOrWhiteSpace($BasePayloadDirectory)) {
-    $candidateBase = Join-Path $installerRoot ".work\base-$BaseVersion-$Runtime"
-    if (-not (Test-Path $candidateBase)) {
-        $candidateBase = Join-Path $installerRoot ".work\base-0.0.4-beta-win-x64"
+    $candidateBase = Join-Path $installerRoot ".work\published-$BaseVersion\setup-payload"
+    if (-not (Test-Path $candidateBase -PathType Container)) {
+        $candidateBase = Join-Path $installerRoot ".work\base-$BaseVersion-$Runtime"
     }
     if (Test-Path $candidateBase -PathType Container) {
         $BasePayloadDirectory = $candidateBase
     }
+}
+
+$appProject = [xml](Get-Content -LiteralPath (Join-Path $repoRoot "ZSnaper.csproj") -Raw)
+if ($Version -ne $appProject.Project.PropertyGroup.Version) {
+    throw "Requested version $Version differs from the application project version $($appProject.Project.PropertyGroup.Version)."
+}
+foreach ($projectPath in @(
+        (Join-Path $installerRoot "src\ZSnaper.FullInstaller\ZSnaper.FullInstaller.csproj"),
+        (Join-Path $installerRoot "src\ZSnaper.UpdateInstaller\ZSnaper.UpdateInstaller.csproj")
+    )) {
+    $project = [xml](Get-Content -LiteralPath $projectPath -Raw)
+    if ($Version -ne $project.Project.PropertyGroup.InformationalVersion) {
+        throw "Requested version $Version differs from the installer project version in $projectPath."
+    }
+}
+if (-not [string]::IsNullOrWhiteSpace($BaseVersion) -and [string]::IsNullOrWhiteSpace($BasePayloadDirectory)) {
+    throw "The published $BaseVersion payload is required to build a differential update. Pass -BasePayloadDirectory."
 }
 
 function Invoke-Dotnet {
@@ -198,7 +215,7 @@ Copy-Item -LiteralPath $setupSource -Destination $setupPath -Force
 Add-EmbeddedPayload -InstallerPath $setupPath -PayloadPath $payloadZip
 
 $fullZipPath = Join-Path $artifactRoot "ZSnaper-v$Version-$Runtime-full.zip"
-Compress-Archive -Path (Join-Path $appPublish "*") -DestinationPath $fullZipPath -CompressionLevel Optimal
+Compress-Archive -Path (Join-Path $installedPayload "*") -DestinationPath $fullZipPath -CompressionLevel Optimal
 
 if (Test-Path $portableSource) {
     $portableZipPath = Join-Path $artifactRoot "ZSnaper-v$Version-$Runtime-portable.zip"
@@ -249,6 +266,12 @@ if (-not [string]::IsNullOrWhiteSpace($BasePayloadDirectory)) {
         if (-not $newMap.ContainsKey($relative)) {
             $deletedFiles.Add($relative)
         }
+    }
+    # Older installers copied the entire setup executable into the installation.
+    # It was absent from saved payload baselines, so explicitly migrate it away.
+    $legacySetup = "update/ZSnaper-Setup.exe"
+    if (-not $deletedFiles.Contains($legacySetup)) {
+        $deletedFiles.Add($legacySetup)
     }
 
     $manifest = [ordered]@{

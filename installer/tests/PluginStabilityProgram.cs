@@ -154,7 +154,7 @@ internal static class PluginStabilityProgram
         Assert(!(await runtime.EnableAsync("example.plugin")).Success,
             "incompatible installed plugin should not load");
         PluginOperationResult removed = await runtime.RemoveAsync("example.plugin");
-        Assert(removed.Success && runtime.List().Count == 0, "plugin should uninstall cleanly");
+        Assert(removed.Success && runtime.List().Count == 0, "plugin should uninstall cleanly: " + removed.Message);
     }
 
     private static async Task TestUpdateResponseValidationAsync()

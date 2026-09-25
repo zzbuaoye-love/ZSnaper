@@ -35,6 +35,7 @@ public static class ThemeManager
                 ConfigService.Save();
                 RebuildPalette();
                 NotifyThemeChanged();
+                AppDiagnostics.LogMessage("Theme.Change", $"Mode={value}");
             }
         }
     }
@@ -51,6 +52,7 @@ public static class ThemeManager
                 ConfigService.Save();
                 RebuildPalette();
                 NotifyThemeChanged();
+                AppDiagnostics.LogMessage("Theme.Change", "Accent color changed.", Serilog.Events.LogEventLevel.Debug);
             }
         }
     }
@@ -67,6 +69,7 @@ public static class ThemeManager
                 ConfigService.Save();
                 RebuildPalette();
                 NotifyThemeChanged();
+                AppDiagnostics.LogMessage("Theme.Change", $"BackgroundGlow={value}", Serilog.Events.LogEventLevel.Debug);
             }
         }
     }

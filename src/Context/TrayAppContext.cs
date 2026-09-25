@@ -6,6 +6,7 @@ using ZSnaper.Services;
 using ZSnaper.Controls;
 using ZSnaper.Update;
 using ZSnaper.Plugins;
+using Serilog.Events;
 
 namespace ZSnaper.Context;
 
@@ -70,8 +71,19 @@ public class TrayAppContext : ApplicationContext
         };
         _mainForm.RequestCapture += StartCapture;
         _mainForm.RequestHotkeyChange += (command, gesture, forceBinding) =>
-            _hotkeyService.TryUpdateHotkey(command, gesture, forceBinding);
-        _mainForm.RequestHotkeyClear += _hotkeyService.TryClearHotkey;
+        {
+            HotkeyChangeResult result = _hotkeyService.TryUpdateHotkey(command, gesture, forceBinding);
+            AppDiagnostics.LogMessage("Hotkey.Change", $"{command}: {(result.Success ? "applied" : "failed")}",
+                result.Success ? LogEventLevel.Information : LogEventLevel.Warning);
+            return result;
+        };
+        _mainForm.RequestHotkeyClear += command =>
+        {
+            HotkeyChangeResult result = _hotkeyService.TryClearHotkey(command);
+            AppDiagnostics.LogMessage("Hotkey.Clear", $"{command}: {(result.Success ? "cleared" : "failed")}",
+                result.Success ? LogEventLevel.Information : LogEventLevel.Warning);
+            return result;
+        };
         _mainForm.RequestHotkeyRecordingStart += _hotkeyService.BeginRecording;
         _mainForm.RequestHotkeyRecordingStop += _ => _hotkeyService.EndRecording();
         _mainForm.RequestUpdateCheck += () => _ = CheckForUpdatesAsync(manual: true);
@@ -93,7 +105,10 @@ public class TrayAppContext : ApplicationContext
             Visible = true
         };
         _overlay.CaptureFailed += message =>
+        {
+            AppDiagnostics.LogMessage("Capture.Overlay", message, LogEventLevel.Warning);
             ShowWindowsNotification(1800, "ZSnaper", message, ToolTipIcon.Warning);
+        };
         ThemeManager.ThemeChanged += ApplyThemeIcon;
 
         _trayMenu = new ModernTrayMenu();
@@ -161,6 +176,8 @@ public class TrayAppContext : ApplicationContext
         _tray.MouseDoubleClick += HandleTrayMouseDoubleClick;
 
         _hotkeyService.RegisterConfiguredHotkeys(out bool captureOk, out bool ocrOk);
+        AppDiagnostics.LogMessage("Hotkey.Register", $"Capture={captureOk}; OCR={ocrOk}",
+            captureOk && ocrOk ? LogEventLevel.Debug : LogEventLevel.Warning);
         if (!captureOk)
         {
             ShowWindowsNotification(
@@ -183,6 +200,7 @@ public class TrayAppContext : ApplicationContext
             .ToArray();
         if (otherFailures.Length > 0)
         {
+            AppDiagnostics.LogMessage("Hotkey.Register", $"Other commands failed: {string.Join(", ", otherFailures)}", LogEventLevel.Warning);
             string names = string.Join("、", otherFailures.Select(command => HotkeyCommandCatalog.GetDefinition(command).Name));
             ShowWindowsNotification(2200, "ZSnaper", $"这些快捷键启用失败：{names}", ToolTipIcon.Warning);
         }
@@ -196,7 +214,11 @@ public class TrayAppContext : ApplicationContext
 
     private async Task LoadPluginsAsync()
     {
-        try { await _pluginManager.StartEnabledAsync(); }
+        try
+        {
+            await _pluginManager.StartEnabledAsync();
+            AppDiagnostics.LogMessage("Plugin.Start", "Enabled plugins initialized.", LogEventLevel.Debug);
+        }
         catch (Exception exception) { AppDiagnostics.LogException("TrayAppContext.LoadPlugins", exception); }
     }
 
@@ -208,12 +230,14 @@ public class TrayAppContext : ApplicationContext
         _mainForm.WindowState = FormWindowState.Normal;
         _mainForm.Activate();
         NativeMethods.SetForegroundWindow(_mainForm.Handle);
+        AppDiagnostics.LogMessage("Window.Show", "Main window activated.", LogEventLevel.Debug);
     }
 
     public void ActivateMainWindow() => ShowMainForm();
 
     private void ExecuteHotkeyCommand(HotkeyCommand command)
     {
+        AppDiagnostics.LogMessage("Hotkey.Trigger", command.ToString(), LogEventLevel.Debug);
         switch (command)
         {
             case HotkeyCommand.Capture:
@@ -270,6 +294,7 @@ public class TrayAppContext : ApplicationContext
 
     private void ExecuteTrayClickAction(TrayClickAction action)
     {
+        AppDiagnostics.LogMessage("Tray.Click", action.ToString(), LogEventLevel.Debug);
         switch (action)
         {
             case TrayClickAction.None:
@@ -312,6 +337,7 @@ public class TrayAppContext : ApplicationContext
                 FileName = directory,
                 UseShellExecute = true
             });
+            AppDiagnostics.LogMessage("Folder.Open", "Screenshot folder opened.");
         }
         catch (Exception exception)
         {
@@ -388,6 +414,7 @@ public class TrayAppContext : ApplicationContext
         _updateCheckInProgress = true;
         _lastUpdateAttemptAt = DateTimeOffset.UtcNow;
         _mainForm.SetUpdateStatus("检查中…", isBusy: true);
+        AppDiagnostics.LogMessage("Update.Check", manual ? "Manual update check started." : "Automatic update check started.");
 
         try
         {
@@ -403,6 +430,7 @@ public class TrayAppContext : ApplicationContext
 
             if (result.IsSuccess && result.HasUpdate && result.LatestRelease is { } release)
             {
+                AppDiagnostics.LogMessage("Update.Check", $"Release {release.TagName} is available.");
                 _pendingRelease = release;
                 string version = release.CleanVersion;
                 _mainForm.SetUpdateStatus(
@@ -418,6 +446,7 @@ public class TrayAppContext : ApplicationContext
             }
             else if (result.IsSuccess)
             {
+                AppDiagnostics.LogMessage("Update.Check", "Application is up to date.");
                 _pendingRelease = null;
                 _mainForm.SetUpdateStatus("已是最新", isBusy: false);
                 if (manual)
@@ -427,6 +456,7 @@ public class TrayAppContext : ApplicationContext
             }
             else
             {
+                AppDiagnostics.LogMessage("Update.Check", result.ErrorMessage ?? "Update check failed.", Serilog.Events.LogEventLevel.Warning);
                 _mainForm.SetUpdateStatus("检查失败", isBusy: false);
                 if (manual)
                 {
@@ -437,6 +467,11 @@ public class TrayAppContext : ApplicationContext
                         ToolTipIcon.Warning);
                 }
             }
+        }
+        catch (Exception exception)
+        {
+            AppDiagnostics.LogException("Update.Check", exception);
+            if (!_mainForm.IsDisposed) _mainForm.SetUpdateStatus("检查失败", isBusy: false);
         }
         finally
         {
@@ -450,6 +485,7 @@ public class TrayAppContext : ApplicationContext
         _updateApplyInProgress = true;
         GitHubRelease release = _pendingRelease;
         _mainForm.SetUpdateStatus("下载更新 0%", isBusy: true);
+        AppDiagnostics.LogMessage("Update.Apply", $"Preparing release {release.TagName}.");
         try
         {
             Progress<int> progress = new(percent =>
@@ -462,6 +498,7 @@ public class TrayAppContext : ApplicationContext
 
             _mainForm.SetUpdateStatus("正在安装…", isBusy: true);
             AppUpdateService.Launch(update);
+            AppDiagnostics.LogMessage("Update.Apply", $"Launched silent updater for {release.TagName}.");
             ExitApp();
         }
         catch (OperationCanceledException) when (_updateCancellation.IsCancellationRequested)
@@ -470,6 +507,7 @@ public class TrayAppContext : ApplicationContext
         }
         catch (Exception exception)
         {
+            AppDiagnostics.LogException("Update.Apply", exception);
             _mainForm.SetUpdateStatus("重试更新", isBusy: false, release.TagName);
             ShowWindowsNotification(3500, "ZSnaper", "更新失败：" + exception.Message, ToolTipIcon.Warning);
         }
@@ -515,6 +553,7 @@ public class TrayAppContext : ApplicationContext
         if (_overlay.Visible)
         {
             if (!_overlay.PreservesForeground) _overlay.Activate();
+            AppDiagnostics.LogMessage("Capture.Start", "Existing capture overlay activated.", LogEventLevel.Debug);
             return;
         }
 
@@ -523,6 +562,7 @@ public class TrayAppContext : ApplicationContext
         try
         {
             _overlay.BeginCapture(ShouldPreserveForegroundForCapture());
+            AppDiagnostics.LogMessage("Capture.Start", $"OCR={ocr}; Action={defaultAction}");
         }
         catch (Exception exception)
         {
@@ -588,6 +628,9 @@ public class TrayAppContext : ApplicationContext
                 {
                     CaptureService.TrySaveToPictures(bitmap, out savedFilePath, out saveError);
                 }
+                AppDiagnostics.LogMessage("Capture.Complete",
+                    $"Action={effectiveAction}; OCR={performOcr}; Copy={(copyImage ? copied.ToString() : "Skipped")}; Save={(saveImage ? (savedFilePath is not null).ToString() : "Skipped")}",
+                    (copyImage && !copied) || (saveImage && savedFilePath is null) ? LogEventLevel.Warning : LogEventLevel.Information);
 
                 try { _pluginManager.PublishCapture(bitmap, effectiveAction.ToString()); }
                 catch (Exception exception) { AppDiagnostics.LogException("TrayAppContext.PluginCapture", exception); }
@@ -616,6 +659,7 @@ public class TrayAppContext : ApplicationContext
                 bool ocrFailed = false;
                 try
                 {
+                    AppDiagnostics.LogMessage("OCR.Start", "Recognition started.", LogEventLevel.Debug);
                     OcrRecognitionResult result = await OcrService.RecognizeDetailedAsync(bitmap);
                     text = result.Text;
                     modelName = result.ModelName;
@@ -632,7 +676,8 @@ public class TrayAppContext : ApplicationContext
                     text = "(OCR 失败: " + ex.Message + ")";
                 }
 
-                if (string.IsNullOrWhiteSpace(text))
+                bool textFound = !string.IsNullOrWhiteSpace(text);
+                if (!textFound)
                 {
                     text = "(未识别到文字)";
                 }
@@ -644,6 +689,9 @@ public class TrayAppContext : ApplicationContext
                 _ocrCount++;
                 _mainForm.UpdateHomeOverview(_captureCount, _ocrCount, savedFilePath, wasOcr: true);
                 bool textCopied = CaptureService.TryCopyTextToClipboard(text);
+                AppDiagnostics.LogMessage("OCR.Complete",
+                    $"Success={!ocrFailed}; TextFound={textFound}; TextCopied={textCopied}",
+                    ocrFailed || !textCopied ? LogEventLevel.Warning : LogEventLevel.Information);
 
                 if (!ocrFailed && ConfigService.Current.ShowNotification)
                 {
@@ -690,6 +738,7 @@ public class TrayAppContext : ApplicationContext
             _ocrMode = false;
             _defaultCaptureAction = CaptureCompletionAction.Default;
             Bitmap bitmap = CaptureService.CaptureScreen(bounds);
+            AppDiagnostics.LogMessage("Capture.Screen", "Current screen captured.", LogEventLevel.Debug);
             OnCaptured(bitmap, bounds.Location, CaptureCompletionAction.Default);
         }
         catch (Exception exception)
@@ -708,6 +757,7 @@ public class TrayAppContext : ApplicationContext
         if (_disposed || _exitRequested) return;
         if (!CaptureService.TryGetImageFromClipboard(out Bitmap? bitmap) || bitmap is null)
         {
+            AppDiagnostics.LogMessage("Pin.Clipboard", "No image in clipboard.", LogEventLevel.Warning);
             ShowWindowsNotification(2200, "ZSnaper", "剪贴板中没有可贴出的图片", ToolTipIcon.Info);
             return;
         }
@@ -728,6 +778,7 @@ public class TrayAppContext : ApplicationContext
         pinned.FormClosed += (_, _) => _pinnedImages.Remove(pinned);
         pinned.Show();
         pinned.Activate();
+        AppDiagnostics.LogMessage("Pin.Show", $"Pinned images open={_pinnedImages.Count}");
     }
 
     private static (bool Copy, bool Save) ResolveCaptureDestinations(

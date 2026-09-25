@@ -11,6 +11,7 @@ internal static class AppConfigSanitizer
     {
         ArgumentNullException.ThrowIfNull(config);
 
+        if (!Enum.IsDefined(config.LogLevel)) config.LogLevel = AppLogLevel.Information;
         if (!Enum.IsDefined(config.Theme)) config.Theme = ThemeMode.Light;
         if (!Enum.IsDefined(config.AnimationMode)) config.AnimationMode = AnimationLevel.Balanced;
         if (!Enum.IsDefined(config.ToolbarPlacement)) config.ToolbarPlacement = ToolbarPlacementMode.Auto;

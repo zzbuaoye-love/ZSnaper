@@ -62,4 +62,23 @@ if ($null -ne $update) {
     }
 }
 
+$fullZip = Get-ChildItem -LiteralPath $artifactRoot -Filter "*-full.zip" -File | Select-Object -First 1
+if ($null -eq $fullZip) {
+    throw "No full ZIP was found in $artifactRoot."
+}
+Add-Type -AssemblyName System.IO.Compression
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$archive = [IO.Compression.ZipFile]::OpenRead($fullZip.FullName)
+try {
+    $updateFiles = @($archive.Entries | Where-Object {
+        $_.FullName.Replace('\', '/') -like 'update/*' -and -not [string]::IsNullOrEmpty($_.Name)
+    })
+    if ($updateFiles.Count -ne 1 -or $updateFiles[0].FullName.Replace('\', '/') -ne 'update/Update.exe') {
+        throw "The full ZIP must contain only update/Update.exe in its update directory."
+    }
+}
+finally {
+    $archive.Dispose()
+}
+
 Write-Host "Installer artifact structure is valid: $($setup.Name)"

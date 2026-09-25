@@ -5,8 +5,8 @@
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <Version>0.0.5</Version>
-    <InformationalVersion>0.0.5-beta</InformationalVersion>
+    <Version>0.0.6</Version>
+    <InformationalVersion>0.0.6-beta</InformationalVersion>
     <AssemblyName>ZSnaper.FullInstaller</AssemblyName>
     <RootNamespace>ZSnaper.FullInstaller</RootNamespace>
     <ApplicationIcon>..\..\..\assets\logo\ZSnaper.ico</ApplicationIcon>

@@ -37,10 +37,12 @@ public sealed class PluginRuntimeManager : IDisposable
         {
             InstalledPlugin plugin = _installer.Install(packagePath);
             Changed?.Invoke();
+            AppDiagnostics.LogMessage("Plugin.Install", $"Id={plugin.Manifest.Id}; Version={plugin.Manifest.Version}");
             return new(true, $"已安装 {plugin.Manifest.Name}。启用后才会运行插件代码。");
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException or ArgumentException)
         {
+            AppDiagnostics.LogException("Plugin.Install", exception, Serilog.Events.LogEventLevel.Warning);
             return new(false, exception.Message);
         }
     }
@@ -74,7 +76,7 @@ public sealed class PluginRuntimeManager : IDisposable
             PluginHost? host = null;
             try
             {
-                Assembly assembly = context.LoadFromAssemblyPath(assemblyPath);
+                Assembly assembly = context.LoadManagedAssembly(assemblyPath);
                 Type type = assembly.GetType(installed.Manifest.Entry.Type, throwOnError: true)!;
                 if (!typeof(IZSnaperPlugin).IsAssignableFrom(type))
                     throw new InvalidDataException("插件入口未实现 IZSnaperPlugin。");
@@ -91,6 +93,7 @@ public sealed class PluginRuntimeManager : IDisposable
                 _installer.SetEnabled(id, true);
                 _errors.Remove(id);
                 Changed?.Invoke();
+                AppDiagnostics.LogMessage("Plugin.Enable", $"Id={id}");
                 return new(true, $"已启用 {installed.Manifest.Name}。");
             }
             catch (Exception exception)
@@ -132,6 +135,7 @@ public sealed class PluginRuntimeManager : IDisposable
             _errors.Remove(id);
             if (_running.Count == 0) _latest = null;
             Changed?.Invoke();
+            AppDiagnostics.LogMessage("Plugin.Disable", $"Id={id}");
             return new(true, "插件已停用。");
         }
 
@@ -146,6 +150,8 @@ public sealed class PluginRuntimeManager : IDisposable
         _installer.SetEnabled(id, false);
         _errors.Remove(id);
         Changed?.Invoke();
+        AppDiagnostics.LogMessage("Plugin.Disable", $"Id={id}; CleanupSuccess={failure is null}",
+            failure is null ? Serilog.Events.LogEventLevel.Information : Serilog.Events.LogEventLevel.Warning);
         return failure is null
             ? new(true, "插件已停用。")
             : new(false, "插件已停用，但清理时出错：" + failure.GetBaseException().Message);
@@ -160,10 +166,12 @@ public sealed class PluginRuntimeManager : IDisposable
             _installer.Remove(id);
             _errors.Remove(id);
             Changed?.Invoke();
+            AppDiagnostics.LogMessage("Plugin.Remove", $"Id={id}");
             return new(true, "插件已卸载。");
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
+            AppDiagnostics.LogException($"Plugin.Remove.{id}", exception, Serilog.Events.LogEventLevel.Warning);
             return new(false, "卸载失败：" + exception.Message);
         }
         finally { _gate.Release(); }
@@ -219,12 +227,18 @@ public sealed class PluginRuntimeManager : IDisposable
     private sealed class PluginLoadContext(string mainAssemblyPath) : AssemblyLoadContext(isCollectible: true)
     {
         private readonly AssemblyDependencyResolver _resolver = new(mainAssemblyPath);
+        public Assembly LoadManagedAssembly(string path)
+        {
+            using FileStream stream = File.OpenRead(path);
+            return LoadFromStream(stream);
+        }
+
         protected override Assembly? Load(AssemblyName name)
         {
             if (name.Name == typeof(IZSnaperPlugin).Assembly.GetName().Name)
                 return typeof(IZSnaperPlugin).Assembly;
             string? path = _resolver.ResolveAssemblyToPath(name);
-            return path is null ? null : LoadFromAssemblyPath(path);
+            return path is null ? null : LoadManagedAssembly(path);
         }
 
         protected override nint LoadUnmanagedDll(string name)

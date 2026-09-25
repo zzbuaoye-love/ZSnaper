@@ -21,7 +21,7 @@ internal static class Program
             .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
             .SetupWithoutStarting();
 
-        InstallerWindow window = new(null, "ZSnaper.Setup.exe", "0.0.5-beta")
+        InstallerWindow window = new(null, "ZSnaper.Setup.exe", "0.0.6-beta")
         {
             ShowInTaskbar = false
         };

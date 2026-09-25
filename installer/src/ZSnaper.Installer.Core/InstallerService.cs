@@ -51,9 +51,7 @@ public sealed class InstallerService
             normalizedDirectory,
             key?.GetValue("Version") as string ?? string.Empty,
             executablePath,
-            File.Exists(InstallerPaths.GetSetupExecutablePath(normalizedDirectory))
-                ? InstallerPaths.GetSetupExecutablePath(normalizedDirectory)
-                : Path.Combine(normalizedDirectory, InstallerPaths.SetupExecutableName));
+            InstallerPaths.GetUpdateExecutablePath(normalizedDirectory));
     }
 
     public void ApplyOptionalSettings(
@@ -87,9 +85,10 @@ public sealed class InstallerService
         IProgress<InstallProgress>? progress = null)
     {
         if (!Directory.Exists(payloadDirectory) ||
-            !File.Exists(InstallerPaths.GetProductExecutablePath(payloadDirectory)))
+            !File.Exists(InstallerPaths.GetProductExecutablePath(payloadDirectory)) ||
+            !File.Exists(InstallerPaths.GetUpdateExecutablePath(payloadDirectory)))
         {
-            throw new DirectoryNotFoundException("The payload does not contain ZSnaper.exe.");
+            throw new DirectoryNotFoundException("The payload must contain ZSnaper.exe and update/Update.exe.");
         }
 
         if (!InstallerPaths.IsUsableInstallDirectory(options.InstallDirectory, out string error))
@@ -108,10 +107,6 @@ public sealed class InstallerService
         {
             Directory.CreateDirectory(stagingDirectory);
             CopyDirectory(payloadDirectory, stagingDirectory, progress);
-
-            string stagedSetup = InstallerPaths.GetSetupExecutablePath(stagingDirectory);
-            Directory.CreateDirectory(Path.GetDirectoryName(stagedSetup)!);
-            File.Copy(installerExecutable, stagedSetup, overwrite: true);
 
             if (!Directory.Exists(installDirectory))
             {
@@ -182,37 +177,37 @@ public sealed class InstallerService
 
         using RegistryKey uninstall = Registry.CurrentUser.CreateSubKey(InstallerPaths.UninstallRegistryPath, writable: true)
             ?? throw new InvalidOperationException("Unable to write uninstall metadata.");
-        string setupPath = InstallerPaths.GetSetupExecutablePath(installDirectory);
+        string updaterPath = InstallerPaths.GetUpdateExecutablePath(installDirectory);
         uninstall.SetValue("DisplayName", InstallerPaths.ProductName, RegistryValueKind.String);
         uninstall.SetValue("DisplayVersion", version, RegistryValueKind.String);
         uninstall.SetValue("Publisher", "ZZBuAoYe", RegistryValueKind.String);
         uninstall.SetValue("InstallLocation", installDirectory, RegistryValueKind.String);
         uninstall.SetValue("DisplayIcon", InstallerPaths.GetProductExecutablePath(installDirectory), RegistryValueKind.String);
-        uninstall.SetValue("UninstallString", $"\"{setupPath}\" --uninstall", RegistryValueKind.String);
+        uninstall.SetValue("UninstallString", $"\"{updaterPath}\" --uninstall", RegistryValueKind.String);
         uninstall.SetValue("NoModify", 1, RegistryValueKind.DWord);
-        uninstall.SetValue("NoRepair", 0, RegistryValueKind.DWord);
+        uninstall.SetValue("NoRepair", 1, RegistryValueKind.DWord);
     }
 
     public void OrganizeInstallation(string installDirectory, bool updateRegistry = true)
     {
         string normalizedDirectory = InstallerPaths.Normalize(installDirectory);
         if (!InstallerPaths.IsOwnedPath(normalizedDirectory, normalizedDirectory) ||
-            !File.Exists(InstallerPaths.GetProductExecutablePath(normalizedDirectory)))
+            !File.Exists(InstallerPaths.GetProductExecutablePath(normalizedDirectory)) ||
+            !File.Exists(InstallerPaths.GetUpdateExecutablePath(normalizedDirectory)))
         {
-            throw new InvalidOperationException("The target is not a valid ZSnaper installation.");
+            throw new InvalidOperationException("The target is not a valid ZSnaper installation with an updater.");
         }
 
         string supportDirectory = InstallerPaths.GetSupportDirectory(normalizedDirectory);
         Directory.CreateDirectory(supportDirectory);
-        string organizedSetup = InstallerPaths.GetSetupExecutablePath(normalizedDirectory);
         string[] legacySetups =
         [
+            InstallerPaths.GetSetupExecutablePath(normalizedDirectory),
             Path.Combine(normalizedDirectory, InstallerPaths.SetupExecutableName),
             Path.Combine(normalizedDirectory, ".installer", InstallerPaths.SetupExecutableName)
         ];
         foreach (string legacySetup in legacySetups.Where(File.Exists))
         {
-            File.Copy(legacySetup, organizedSetup, overwrite: true);
             if (!string.Equals(
                     InstallerPaths.Normalize(Environment.ProcessPath ?? string.Empty),
                     InstallerPaths.Normalize(legacySetup),

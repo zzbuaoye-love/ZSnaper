@@ -11,25 +11,32 @@ internal static class Program
     private static void Main(string[] args)
     {
         AppDiagnostics.Initialize();
-        WaitForPreviousInstance(args);
-        ApplicationConfiguration.Initialize();
-        Application.AddMessageFilter(new MouseWheelHoverFilter());
-
-        using var singleInstance = new SingleInstanceCoordinator();
-        if (!singleInstance.IsPrimary)
+        try
         {
-            if (singleInstance.NotifyPrimaryInstance() || !singleInstance.TryBecomePrimary())
-            {
-                return;
-            }
-        }
+            WaitForPreviousInstance(args);
+            ApplicationConfiguration.Initialize();
+            Application.AddMessageFilter(new MouseWheelHoverFilter());
 
-        bool startMinimizedToTray = args.Any(argument =>
-            string.Equals(argument, "--startup", StringComparison.OrdinalIgnoreCase));
-        using var context = new TrayAppContext(startMinimizedToTray);
-        singleInstance.ActivationRequested += context.ActivateMainWindow;
-        singleInstance.StartListening();
-        Application.Run(context);
+            using var singleInstance = new SingleInstanceCoordinator();
+            if (!singleInstance.IsPrimary)
+            {
+                if (singleInstance.NotifyPrimaryInstance() || !singleInstance.TryBecomePrimary())
+                {
+                    return;
+                }
+            }
+
+            bool startMinimizedToTray = args.Any(argument =>
+                string.Equals(argument, "--startup", StringComparison.OrdinalIgnoreCase));
+            using var context = new TrayAppContext(startMinimizedToTray);
+            singleInstance.ActivationRequested += context.ActivateMainWindow;
+            singleInstance.StartListening();
+            Application.Run(context);
+        }
+        finally
+        {
+            AppDiagnostics.Shutdown();
+        }
     }
 
     private static void WaitForPreviousInstance(string[] args)

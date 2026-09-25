@@ -12,7 +12,7 @@ public sealed record InstallationInfo(
     string InstallDirectory,
     string Version,
     string ExecutablePath,
-    string SetupPath);
+    string UninstallExecutablePath);
 
 public sealed record InstallProgress(string Stage, int Completed, int Total);
 

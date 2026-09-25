@@ -77,6 +77,9 @@ dotnet publish ZSnaper.csproj `
 ```bash
 %APPDATA%\ZSnaper\config.json
 ```
+在「设置 → 更新与系统 → 配置存放位置」可以切换为程序所在目录的 `config\config.json`。切换时会将当前配置写入新位置；安装目录不可写时会保留原位置并提示错误。程序目录模式通过 `config\.active` 标记在下次启动时继续生效。卸载程序会同时删除安装目录内的配置；需要保留时请先备份该目录。
+
+运行日志由 Serilog 写入 `%LOCALAPPDATA%\ZSnaper\Logs`，按天和大小滚动，最多保留 14 个文件。设置页可选择调试、信息（默认）、警告或错误级别，修改后立即生效；可直接打开当前配置目录和日志目录。日志记录截图、OCR、贴图、快捷键、主题、更新等操作的状态与异常，不记录截图画面、OCR 文字或密钥。
 您可以通过:
 ```cmd
 explorer %APPDATA%\ZSnaper\

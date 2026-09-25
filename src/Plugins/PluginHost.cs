@@ -171,7 +171,14 @@ internal sealed class PluginLogger(string pluginId) : IPluginLogger
 {
     public void Log(PluginLogLevel level, string message, Exception? exception = null)
     {
-        if (exception is not null) AppDiagnostics.LogException($"Plugin.{pluginId}.{level}: {message}", exception);
-        else AppDiagnostics.LogMessage($"Plugin.{pluginId}.{level}", message);
+        Serilog.Events.LogEventLevel eventLevel = level switch
+        {
+            PluginLogLevel.Debug => Serilog.Events.LogEventLevel.Debug,
+            PluginLogLevel.Warning => Serilog.Events.LogEventLevel.Warning,
+            PluginLogLevel.Error => Serilog.Events.LogEventLevel.Error,
+            _ => Serilog.Events.LogEventLevel.Information
+        };
+        if (exception is not null) AppDiagnostics.LogException($"Plugin.{pluginId}: {message}", exception, eventLevel);
+        else AppDiagnostics.LogMessage($"Plugin.{pluginId}", message, eventLevel);
     }
 }

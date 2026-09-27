@@ -1,6 +1,6 @@
 # Manifest and packaging
 
-A `.zsp` file is a ZIP archive. `manifest.json` must be at the archive root, and `entry.assembly` must name a DLL inside it. The [demo build script](https://github.com/zzbuaoye-love/ZSnaper/blob/5a4e84e8d969902295bb587486bd63b91ae17257/samples/Example.Plugin/build-package.ps1) in [PR #1](https://github.com/zzbuaoye-love/ZSnaper/pull/1) produces this layout:
+A `.zsp` file is a ZIP archive. `manifest.json` must be at the archive root, and `entry.assembly` must name a DLL inside it. The [demo build script](https://github.com/zzbuaoye-love/ZSnaper/blob/main/samples/Example.Plugin/build-package.ps1) produces this layout:
 
 ```text
 Example.Plugin.zsp
@@ -8,7 +8,7 @@ Example.Plugin.zsp
 └── Example.Plugin.dll
 ```
 
-The [demo manifest](https://github.com/zzbuaoye-love/ZSnaper/blob/5a4e84e8d969902295bb587486bd63b91ae17257/samples/Example.Plugin/manifest.json) is:
+The [demo manifest](https://github.com/zzbuaoye-love/ZSnaper/blob/main/samples/Example.Plugin/manifest.json) is:
 
 ```json
 {

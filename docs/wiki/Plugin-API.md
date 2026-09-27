@@ -1,6 +1,6 @@
 # Plugin API 1.0.0
 
-Reference [`ZSnaper.Plugin.Abstractions.csproj`](https://github.com/zzbuaoye-love/ZSnaper/blob/main/src/Plugin.Abstractions/ZSnaper.Plugin.Abstractions.csproj), target `net8.0`, and implement `IZSnaperPlugin`. The complete signatures are in [`PluginContracts.cs`](https://github.com/zzbuaoye-love/ZSnaper/blob/main/src/Plugin.Abstractions/PluginContracts.cs). See the [demo source](https://github.com/zzbuaoye-love/ZSnaper/tree/main/samples/Example.Plugin) for a working implementation.
+Reference [`ZSnaper.Plugin.Abstractions.csproj`](https://github.com/zzbuaoye-love/ZSnaper/blob/main/src/Plugin.Abstractions/ZSnaper.Plugin.Abstractions.csproj), target `net8.0`, and implement `IZSnaperPlugin`. The complete signatures are in [`PluginContracts.cs`](https://github.com/zzbuaoye-love/ZSnaper/blob/main/src/Plugin.Abstractions/PluginContracts.cs). See the [demo source](https://github.com/zzbuaoye-love/ZSnaper/tree/5a4e84e8d969902295bb587486bd63b91ae17257/samples/Example.Plugin) in [PR #1](https://github.com/zzbuaoye-love/ZSnaper/pull/1) for a working implementation.
 
 ```csharp
 public interface IZSnaperPlugin

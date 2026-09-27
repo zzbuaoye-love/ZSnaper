@@ -113,7 +113,7 @@ internal static class PluginStabilityProgram
         string packagePath = Path.Combine(root, "sample.zsp");
         PluginManifest manifest = new()
         {
-            Id = "example.plugin", Name = "Example Plugin", Version = "1.0.0",
+            Id = "example.plugin", Name = "Example Plugin", Version = "1.1.0",
             Entry = new PluginEntryPoint
             {
                 Assembly = "Example.Plugin.dll", Type = "Example.Plugin.ExamplePlugin"
@@ -142,6 +142,12 @@ internal static class PluginStabilityProgram
             "sample plugin should initialize and enable: " + enabled.Message);
         Assert(runtime.GetActions().Any(action => action.Item.Id == "log_capture"),
             "enabled plugin should register its action");
+        Assert(runtime.GetActions().Any(action => action.Item.Id == "save_capture"),
+            "demo plugin should register its save action");
+        using (var bitmap = new System.Drawing.Bitmap(2, 2))
+            runtime.PublishCapture(bitmap, "test");
+        PluginOperationResult actionResult = await runtime.RunActionAsync("example.plugin", "log_capture");
+        Assert(actionResult.Success, "demo action should run after a capture: " + actionResult.Message);
         PluginOperationResult disabled = await runtime.DisableAsync("example.plugin");
         Assert(disabled.Success && !runtime.IsRunning("example.plugin") && runtime.GetActions().Count == 0,
             "disabled plugin should remove actions");

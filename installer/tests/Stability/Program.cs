@@ -10,11 +10,40 @@ using ZSnaper.Update;
 
 namespace ZSnaper.Stability;
 
-internal static class Program
+internal static partial class Program
 {
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.Contains("--selection-smoke"))
+        {
+            Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+            ConfigService.Current.ToolbarPlacement = ToolbarPlacementMode.Center;
+            ConfigService.Current.Theme = args.Contains("--dark") ? ThemeMode.Dark : ThemeMode.Light;
+            TestSmartSelectionDragInvalidation();
+            TestSmartCandidateStability();
+            TestSelectionInteraction();
+            TestSelectionIncrementalRendering();
+            Console.WriteLine("Selection interaction and incremental rendering tests passed.");
+            return 0;
+        }
+
+        if (args.Contains("--arrow-edit-smoke"))
+        {
+            Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+            ConfigService.Current.Theme = args.Contains("--dark") ? ThemeMode.Dark : ThemeMode.Light;
+            ConfigService.Current.ToolbarPlacement = ToolbarPlacementMode.Center;
+            ConfigService.Current.AnnotationToolBehavior = AnnotationToolBehavior.Sticky;
+            TestArrowEditing();
+            Console.WriteLine("Arrow editing tests passed.");
+            return 0;
+        }
+
+        if (args.Contains("--selection-preview"))
+        {
+            ShowSelectionPreview();
+            return 0;
+        }
         if (args.Contains("--config-location-smoke", StringComparer.OrdinalIgnoreCase))
         {
             TestConfigLocationSwitch();
@@ -761,7 +790,11 @@ internal static class Program
 
     private sealed class OverlayFormProbe : OverlayForm
     {
+        public void RaiseMouseDown(MouseEventArgs args) => base.OnMouseDown(args);
         public void RaiseMouseMove(MouseEventArgs args) => base.OnMouseMove(args);
+        public void RaiseMouseUp(MouseEventArgs args) => base.OnMouseUp(args);
+        public void RaiseKeyDown(KeyEventArgs args) => base.OnKeyDown(args);
+        public void PaintFrame(Graphics graphics) => base.OnPaint(new PaintEventArgs(graphics, ClientRectangle));
     }
 
     private static void Assert(bool condition, string message)

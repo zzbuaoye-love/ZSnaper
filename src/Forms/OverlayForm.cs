@@ -23,18 +23,26 @@ public class OverlayForm : Form
     private const float MaxCustomMosaicBrush = 512f;
     private const int MaxCustomMosaicPixel = 256;
     private const int SmartSelectionDragThreshold = 4;
+    private const int SmartSelectionSwitchDelay = 90;
+    private const int SmartSelectionRefineDelay = 80;
 
     private Bitmap? _screen;
     private readonly Dictionary<int, Bitmap> _pixelatedScreens = [];
     private CapturedCursor? _capturedCursor;
     private Point _start;
     private Point _dragOrigin;
+    private Point _resizePointerOffset;
     private Rectangle _selection;
     private Rectangle _selectionAtDragStart;
     private DragMode _dragMode;
     private bool _hasSelection;
     private SmartSelectionTarget? _smartTarget;
     private SmartSelectionTarget? _smartFastTarget;
+    private SmartSelectionTarget? _smartPendingTarget;
+    private bool _smartTargetPending;
+    private long _smartPendingSince;
+    private readonly System.Windows.Forms.Timer _smartSwitchTimer;
+    private readonly System.Windows.Forms.Timer _smartRefineTimer;
     private Rectangle _pendingSmartBounds;
     private bool _pendingSmartClick;
     private Point _pendingSmartPoint;
@@ -46,6 +54,12 @@ public class OverlayForm : Form
     private ToolbarAction _activeTool;
     private readonly List<AnnotationItem> _annotations = [];
     private AnnotationItem? _workingAnnotation;
+    private ArrowAnnotation? _selectedArrow;
+    private ArrowEditMode _arrowEditMode;
+    private PointF _arrowEditPointer;
+    private PointF _arrowEditOffset;
+    private PointF _arrowStartAtEdit;
+    private PointF _arrowEndAtEdit;
     private RichTextBox? _inlineTextEditor;
     private PointF _inlineTextLocation;
     private RectangleF _inlineTextBounds;
@@ -104,6 +118,15 @@ public class OverlayForm : Form
             InvalidateInlineTextBounds();
         };
 
+        _smartSwitchTimer = new System.Windows.Forms.Timer { Interval = 25 };
+        _smartSwitchTimer.Tick += (_, _) => CommitPendingSmartTarget();
+        _smartRefineTimer = new System.Windows.Forms.Timer { Interval = SmartSelectionRefineDelay };
+        _smartRefineTimer.Tick += (_, _) =>
+        {
+            _smartRefineTimer.Stop();
+            RefineSmartSelection();
+        };
+
         ThemeManager.ThemeChanged += OnThemeChanged;
     }
 
@@ -144,6 +167,8 @@ public class OverlayForm : Form
         _hasSelection = false;
         _smartTarget = null;
         _smartFastTarget = null;
+        ClearPendingSmartTarget();
+        _smartRefineTimer.Stop();
         _pendingSmartClick = false;
         _smartSelectionVersion++;
         _includeCursor = false;
@@ -154,6 +179,8 @@ public class OverlayForm : Form
         _activeStyleSlider = StyleSliderKind.None;
         CancelStyleValueEdit();
         _workingAnnotation = null;
+        _selectedArrow = null;
+        _arrowEditMode = ArrowEditMode.None;
         _annotations.Clear();
         CancelInlineText();
         _showStyleBar = false;
@@ -179,7 +206,12 @@ public class OverlayForm : Form
     {
         base.OnVisibleChanged(e);
         _captureOverlayVisible = Visible;
-        if (!Visible) StopCaptureKeyboardRouting();
+        if (!Visible)
+        {
+            StopCaptureKeyboardRouting();
+            ClearPendingSmartTarget();
+            _smartRefineTimer.Stop();
+        }
     }
 
     private void ShowCaptureOverlay()
@@ -285,6 +317,16 @@ public class OverlayForm : Form
         }
         if (e.Button != MouseButtons.Left) return;
 
+        // A click is an explicit choice; honor the target under it even while its
+        // hover outline is waiting for the short settling interval.
+        if (!_hasSelection && _smartPendingTarget is SmartSelectionTarget pendingTarget &&
+            ScreenToClientBounds(pendingTarget.ScreenBounds).Contains(e.Location))
+        {
+            _smartTarget = pendingTarget;
+        }
+        _smartRefineTimer.Stop();
+        ClearPendingSmartTarget();
+
         if (_hasSelection)
         {
             Rectangle styleBarBounds = GetStyleBarBounds();
@@ -335,6 +377,27 @@ public class OverlayForm : Form
                 return;
             }
 
+            if (_activeTool is ToolbarAction.Arrow or ToolbarAction.None &&
+                TryHitTestArrow(e.Location, out ArrowAnnotation? arrow, out ArrowEditMode editMode))
+            {
+                SelectArrow(arrow!);
+                BeginArrowEdit(editMode, e.Location);
+                return;
+            }
+
+            if (_selectedArrow is not null)
+            {
+                DeselectArrow();
+                if (ConfigService.Current.AnnotationToolBehavior == AnnotationToolBehavior.SingleUse)
+                {
+                    _activeTool = ToolbarAction.None;
+                    _showStyleBar = false;
+                    Invalidate();
+                    return;
+                }
+                if (_activeTool == ToolbarAction.None) return;
+            }
+
             if (IsAnnotationTool(_activeTool) && _selection.Contains(e.Location))
             {
                 if (_activeTool == ToolbarAction.Text)
@@ -354,10 +417,10 @@ public class OverlayForm : Form
                 _dragMode = hit;
                 _dragOrigin = e.Location;
                 _selectionAtDragStart = _selection;
-                if (!_selection.Contains(e.Location) && hit != DragMode.Move)
-                {
-                    _selection = ResizeSelection(ClampToClient(e.Location));
-                }
+                // Keep the grabbed edge under the same part of the pointer's hit area.
+                _resizePointerOffset = new Point(
+                    ChangesLeft(hit) ? _selection.Left - e.X : ChangesRight(hit) ? _selection.Right - e.X : 0,
+                    ChangesTop(hit) ? _selection.Top - e.Y : ChangesBottom(hit) ? _selection.Bottom - e.Y : 0);
                 Capture = true;
                 Invalidate();
                 return;
@@ -367,6 +430,7 @@ public class OverlayForm : Form
             _selectionAtDragStart = _selection;
             _dragMode = GetExpansionDragMode(expansionPoint);
             _dragOrigin = expansionPoint;
+            _resizePointerOffset = Point.Empty;
             _selection = ResizeSelection(expansionPoint);
             Capture = true;
             Cursor = CursorForDragMode(_dragMode);
@@ -439,6 +503,13 @@ public class OverlayForm : Form
             return;
         }
 
+        if (_arrowEditMode != ArrowEditMode.None)
+        {
+            UpdateArrowEdit(e.Location);
+            Cursor = _arrowEditMode == ArrowEditMode.Move ? Cursors.SizeAll : Cursors.Cross;
+            return;
+        }
+
         if (_pressedAction != ToolbarAction.None)
         {
             _hoveredAction = HitTestToolbar(e.Location);
@@ -449,36 +520,7 @@ public class OverlayForm : Form
 
         if (_dragMode != DragMode.None)
         {
-            Point point = ClampToClient(e.Location);
-            Rectangle nextSelection;
-            if (_dragMode == DragMode.NewSelection)
-            {
-                nextSelection = FromPoints(_start, point);
-            }
-            else if (_dragMode == DragMode.Move)
-            {
-                nextSelection = MoveSelection(point);
-            }
-            else
-            {
-                nextSelection = ResizeSelection(point);
-            }
-
-            if (nextSelection == _selection)
-            {
-                return;
-            }
-
-            Rectangle oldSelection = _selection;
-            _selection = nextSelection;
-            _hasSelection = _selection.Width >= MinimumSelectionSize &&
-                            _selection.Height >= MinimumSelectionSize;
-
-            Cursor = CursorForDragMode(_dragMode);
-
-            Rectangle dirty = ComputeSelectionDirtyRect(oldSelection, _selection);
-            Invalidate(dirty);
-            Update();
+            UpdateSelectionDrag(e.Location);
             return;
         }
 
@@ -497,10 +539,15 @@ public class OverlayForm : Form
         }
 
         bool overStyleSlider = HitTestStyleSlider(e.Location) != StyleSliderKind.None;
+        ArrowEditMode arrowHover = ArrowEditMode.None;
+        bool overArrow = _activeTool is ToolbarAction.Arrow or ToolbarAction.None &&
+            _hasSelection && TryHitTestArrow(e.Location, out _, out arrowHover);
         Cursor = overStyleSlider
             ? Cursors.SizeWE
             : hoveredAction != ToolbarAction.None || overStyleBar
                 ? Cursors.Hand
+            : overArrow
+                ? arrowHover == ArrowEditMode.Move ? Cursors.SizeAll : Cursors.Cross
             : IsAnnotationTool(_activeTool) && _selection.Contains(e.Location)
                 ? Cursors.Cross
                 : CursorForDragMode(hoveredEdge);
@@ -539,6 +586,15 @@ public class OverlayForm : Form
             return;
         }
 
+        if (_arrowEditMode != ArrowEditMode.None)
+        {
+            UpdateArrowEdit(e.Location);
+            _arrowEditMode = ArrowEditMode.None;
+            Capture = false;
+            Cursor = Cursors.SizeAll;
+            return;
+        }
+
         if (_pressedAction != ToolbarAction.None)
         {
             ToolbarAction pressed = _pressedAction;
@@ -554,6 +610,17 @@ public class OverlayForm : Form
                 Invalidate();
             }
             return;
+        }
+
+        // A quick press/release can arrive without a final MouseMove message.
+        if (_pendingSmartClick &&
+            (Math.Abs(e.X - _start.X) >= SmartSelectionDragThreshold ||
+             Math.Abs(e.Y - _start.Y) >= SmartSelectionDragThreshold))
+        {
+            _pendingSmartClick = false;
+            _smartTarget = null;
+            _smartFastTarget = null;
+            _dragMode = DragMode.NewSelection;
         }
 
         if (_pendingSmartClick)
@@ -572,6 +639,7 @@ public class OverlayForm : Form
         }
 
         if (_dragMode == DragMode.None) return;
+        UpdateSelectionDrag(e.Location);
         DragMode completedDragMode = _dragMode;
         _dragMode = DragMode.None;
         Capture = false;
@@ -595,6 +663,12 @@ public class OverlayForm : Form
         }
     }
 
+    protected override void OnPaintBackground(PaintEventArgs e)
+    {
+        // The frozen screenshot covers every invalidated pixel in OnPaint.
+        if (_screen is null) base.OnPaintBackground(e);
+    }
+
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
@@ -615,14 +689,15 @@ public class OverlayForm : Form
         if (_includeCursor && _capturedCursor is not null)
         {
             GraphicsState state = graphics.Save();
-            graphics.SetClip(_selection);
+            graphics.SetClip(_selection, CombineMode.Intersect);
             CaptureService.DrawCursor(graphics, _capturedCursor, Location);
             graphics.Restore(state);
         }
 
         GraphicsState annotationState = graphics.Save();
-        graphics.SetClip(_selection);
+        graphics.SetClip(_selection, CombineMode.Intersect);
         DrawAnnotations(graphics);
+        DrawArrowEditHandles(graphics);
         DrawInlineTextPreview(graphics);
         graphics.Restore(annotationState);
 
@@ -717,6 +792,31 @@ public class OverlayForm : Form
             e.Handled = true;
             e.SuppressKeyPress = true;
             return;
+        }
+
+        if (_selectedArrow is not null && e.Modifiers == Keys.None)
+        {
+            if (e.KeyCode == Keys.Escape)
+            {
+                DeselectArrow();
+                _activeTool = ToolbarAction.None;
+                _showStyleBar = false;
+                Invalidate();
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+                return;
+            }
+            if (e.KeyCode == Keys.Delete)
+            {
+                ArrowAnnotation arrow = _selectedArrow;
+                RectangleF bounds = GetAnnotationBounds(arrow);
+                _annotations.Remove(arrow);
+                DeselectArrow();
+                InvalidateAnnotationBounds(bounds);
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+                return;
+            }
         }
 
         switch (e.KeyCode)
@@ -820,6 +920,8 @@ public class OverlayForm : Form
         ThemeManager.ThemeChanged -= OnThemeChanged;
         _inlineCaretTimer.Stop();
         _inlineCaretTimer.Dispose();
+        _smartSwitchTimer.Dispose();
+        _smartRefineTimer.Dispose();
         _screen?.Dispose();
         _screen = null;
         DisposePixelatedScreens();
@@ -976,8 +1078,12 @@ public class OverlayForm : Form
         _pendingSmartClick = false;
         _smartTarget = null;
         _smartFastTarget = null;
+        ClearPendingSmartTarget();
+        _smartRefineTimer.Stop();
         _smartSelectionVersion++;
         _workingAnnotation = null;
+        _selectedArrow = null;
+        _arrowEditMode = ArrowEditMode.None;
         Capture = false;
         Hide();
     }
@@ -990,6 +1096,8 @@ public class OverlayForm : Form
         _hasSelection = false;
         _smartTarget = null;
         _smartFastTarget = null;
+        ClearPendingSmartTarget();
+        _smartRefineTimer.Stop();
         _pendingSmartClick = false;
         _smartSelectionVersion++;
         _dragMode = DragMode.None;
@@ -997,6 +1105,8 @@ public class OverlayForm : Form
         _pressedAction = ToolbarAction.None;
         _activeTool = ToolbarAction.None;
         _workingAnnotation = null;
+        _selectedArrow = null;
+        _arrowEditMode = ArrowEditMode.None;
         _annotations.Clear();
         Cursor = Cursors.Cross;
         UpdateSmartSelection(PointToClient(System.Windows.Forms.Cursor.Position));
@@ -1013,6 +1123,7 @@ public class OverlayForm : Form
     {
         CommitStyleValueEdit();
         CommitInlineText();
+        DeselectArrow();
         _activeTool = _activeTool == action ? ToolbarAction.None : action;
         _workingAnnotation = null;
         _showStyleBar = _activeTool != ToolbarAction.None;
@@ -1023,6 +1134,7 @@ public class OverlayForm : Form
 
     private void BeginAnnotation(Point point)
     {
+        DeselectArrow();
         Color color = GetAnnotationColor();
         AnnotationItem annotation = _activeTool switch
         {
@@ -1075,18 +1187,131 @@ public class OverlayForm : Form
 
     private void FinishWorkingAnnotation()
     {
-        if (_workingAnnotation is ArrowAnnotation arrow &&
-            Distance(arrow.Start, arrow.End) < 3f)
+        ArrowAnnotation? completedArrow = _workingAnnotation as ArrowAnnotation;
+        if (completedArrow is not null && Distance(completedArrow.Start, completedArrow.End) < 3f)
         {
-            _annotations.Remove(_workingAnnotation);
+            _annotations.Remove(completedArrow);
+            completedArrow = null;
         }
 
         _workingAnnotation = null;
-        if (ConfigService.Current.AnnotationToolBehavior == AnnotationToolBehavior.SingleUse)
+        if (completedArrow is not null)
+        {
+            SelectArrow(completedArrow);
+        }
+        else if (ConfigService.Current.AnnotationToolBehavior == AnnotationToolBehavior.SingleUse)
         {
             _activeTool = ToolbarAction.None;
         }
         Invalidate(GetToolbarBounds());
+    }
+
+    private void SelectArrow(ArrowAnnotation arrow)
+    {
+        if (!ReferenceEquals(_selectedArrow, arrow))
+        {
+            if (_selectedArrow is not null) InvalidateAnnotation(_selectedArrow);
+            _selectedArrow = arrow;
+            InvalidateAnnotation(arrow);
+        }
+        _activeTool = ToolbarAction.Arrow;
+        _showStyleBar = true;
+        Invalidate(GetStyleBarBounds());
+    }
+
+    private void DeselectArrow()
+    {
+        if (_selectedArrow is null) return;
+        InvalidateAnnotation(_selectedArrow);
+        _selectedArrow = null;
+        _arrowEditMode = ArrowEditMode.None;
+        Invalidate(GetStyleBarBounds());
+    }
+
+    private bool TryHitTestArrow(Point point, out ArrowAnnotation? arrow, out ArrowEditMode mode)
+    {
+        arrow = null;
+        mode = ArrowEditMode.None;
+        if (!_selection.Contains(point)) return false;
+
+        // Selected handles take priority over an overlapping arrow's shaft.
+        if (_selectedArrow is not null)
+        {
+            mode = HitTestArrow(_selectedArrow, point);
+            if (mode != ArrowEditMode.None)
+            {
+                arrow = _selectedArrow;
+                return true;
+            }
+        }
+
+        for (int i = _annotations.Count - 1; i >= 0; i--)
+        {
+            if (_annotations[i] is not ArrowAnnotation candidate || ReferenceEquals(candidate, _selectedArrow)) continue;
+            mode = HitTestArrow(candidate, point);
+            if (mode == ArrowEditMode.None) continue;
+            arrow = candidate;
+            return true;
+        }
+        return false;
+    }
+
+    private static ArrowEditMode HitTestArrow(ArrowAnnotation arrow, Point point)
+    {
+        const float handleRadius = 11f;
+        if (Distance(arrow.Start, point) <= handleRadius) return ArrowEditMode.Start;
+        if (Distance(arrow.End, point) <= handleRadius) return ArrowEditMode.End;
+
+        float dx = arrow.End.X - arrow.Start.X;
+        float dy = arrow.End.Y - arrow.Start.Y;
+        float lengthSquared = dx * dx + dy * dy;
+        if (lengthSquared < 1f) return ArrowEditMode.None;
+        float amount = Math.Clamp(((point.X - arrow.Start.X) * dx + (point.Y - arrow.Start.Y) * dy) /
+            lengthSquared, 0f, 1f);
+        PointF nearest = new(arrow.Start.X + amount * dx, arrow.Start.Y + amount * dy);
+        return Distance(nearest, point) <= Math.Max(8f, arrow.Width / 2f + 4f)
+            ? ArrowEditMode.Move : ArrowEditMode.None;
+    }
+
+    private void BeginArrowEdit(ArrowEditMode mode, Point point)
+    {
+        if (_selectedArrow is null) return;
+        _arrowEditMode = mode;
+        _arrowEditPointer = point;
+        _arrowStartAtEdit = _selectedArrow.Start;
+        _arrowEndAtEdit = _selectedArrow.End;
+        PointF handle = mode == ArrowEditMode.Start ? _selectedArrow.Start : _selectedArrow.End;
+        _arrowEditOffset = new PointF(handle.X - point.X, handle.Y - point.Y);
+        Capture = true;
+        Cursor = mode == ArrowEditMode.Move ? Cursors.SizeAll : Cursors.Cross;
+    }
+
+    private void UpdateArrowEdit(Point pointer)
+    {
+        if (_selectedArrow is not ArrowAnnotation arrow) return;
+        RectangleF oldBounds = GetAnnotationBounds(arrow);
+        if (_arrowEditMode == ArrowEditMode.Move)
+        {
+            float minX = Math.Min(_arrowStartAtEdit.X, _arrowEndAtEdit.X);
+            float maxX = Math.Max(_arrowStartAtEdit.X, _arrowEndAtEdit.X);
+            float minY = Math.Min(_arrowStartAtEdit.Y, _arrowEndAtEdit.Y);
+            float maxY = Math.Max(_arrowStartAtEdit.Y, _arrowEndAtEdit.Y);
+            float dx = Math.Clamp(pointer.X - _arrowEditPointer.X,
+                _selection.Left - minX, _selection.Right - 1 - maxX);
+            float dy = Math.Clamp(pointer.Y - _arrowEditPointer.Y,
+                _selection.Top - minY, _selection.Bottom - 1 - maxY);
+            arrow.Start = new PointF(_arrowStartAtEdit.X + dx, _arrowStartAtEdit.Y + dy);
+            arrow.End = new PointF(_arrowEndAtEdit.X + dx, _arrowEndAtEdit.Y + dy);
+        }
+        else
+        {
+            PointF handle = new(
+                Math.Clamp(pointer.X + _arrowEditOffset.X, _selection.Left, _selection.Right - 1),
+                Math.Clamp(pointer.Y + _arrowEditOffset.Y, _selection.Top, _selection.Bottom - 1));
+            if (_arrowEditMode == ArrowEditMode.Start) arrow.Start = handle;
+            else if (_arrowEditMode == ArrowEditMode.End) arrow.End = handle;
+        }
+        InvalidateAnnotationBounds(RectangleF.Union(oldBounds, GetAnnotationBounds(arrow)));
     }
 
     private void BeginInlineText(Point point)
@@ -1277,6 +1502,7 @@ public class OverlayForm : Form
         RectangleF bounds = GetAnnotationBounds(annotation);
         _annotations.RemoveAt(_annotations.Count - 1);
         if (ReferenceEquals(annotation, _workingAnnotation)) _workingAnnotation = null;
+        if (ReferenceEquals(annotation, _selectedArrow)) DeselectArrow();
         InvalidateAnnotationBounds(bounds);
         Invalidate(GetToolbarBounds());
     }
@@ -1364,6 +1590,25 @@ public class OverlayForm : Form
         }
     }
 
+    private void UpdateSelectionDrag(Point point)
+    {
+        Rectangle next = _dragMode switch
+        {
+            DragMode.NewSelection => FromPoints(_start, ClampToClient(point)),
+            DragMode.Move => MoveSelection(point),
+            _ => ResizeSelection(point)
+        };
+        Cursor = CursorForDragMode(_dragMode);
+        if (next == _selection) return;
+
+        Rectangle previous = _selection;
+        _selection = next;
+        _hasSelection = next.Width >= MinimumSelectionSize && next.Height >= MinimumSelectionSize;
+        using Region dirty = ComputeSelectionDirtyRegion(previous, next);
+        // Let Windows merge pending input and invalidations before painting the latest position.
+        Invalidate(dirty);
+    }
+
     private Rectangle MoveSelection(Point point)
     {
         int x = _selectionAtDragStart.X + point.X - _dragOrigin.X;
@@ -1375,6 +1620,7 @@ public class OverlayForm : Form
 
     private Rectangle ResizeSelection(Point point)
     {
+        point.Offset(_resizePointerOffset);
         int left = _selectionAtDragStart.Left;
         int top = _selectionAtDragStart.Top;
         int right = _selectionAtDragStart.Right;
@@ -1687,6 +1933,24 @@ public class OverlayForm : Form
         graphics.SmoothingMode = previousSmoothing;
     }
 
+    private void DrawArrowEditHandles(Graphics graphics)
+    {
+        if (_selectedArrow is not ArrowAnnotation arrow) return;
+        Color accent = ThemeManager.Palette.AccentColor;
+        Color ring = accent.R > 220 && accent.G > 220 && accent.B > 220
+            ? Color.FromArgb(80, 80, 80)
+            : accent;
+        using var shadow = new SolidBrush(Color.FromArgb(80, 0, 0, 0));
+        using var fill = new SolidBrush(Color.White);
+        using var outline = new Pen(ring, 2f);
+        foreach (PointF point in new[] { arrow.Start, arrow.End })
+        {
+            graphics.FillEllipse(shadow, point.X - 6f, point.Y - 5f, 12f, 12f);
+            graphics.FillEllipse(fill, point.X - 5f, point.Y - 5f, 10f, 10f);
+            graphics.DrawEllipse(outline, point.X - 5f, point.Y - 5f, 10f, 10f);
+        }
+    }
+
     private static void DrawPenStroke(Graphics graphics, StrokeAnnotation stroke)
     {
         using var pen = new Pen(stroke.Color, stroke.Width)
@@ -1891,11 +2155,10 @@ public class OverlayForm : Form
         _smartFastTarget = fastTarget;
         OfferSmartTarget(fastTarget, screenPoint, allowImmediate: _smartTarget is null);
 
-        Cursor = _smartTarget is not null || fastTarget is not null ? Cursors.Hand : Cursors.Cross;
-        if (!_smartSelectionResolving && fastTarget is not null)
-        {
-            RefineSmartSelection();
-        }
+        Cursor = (_smartTarget is SmartSelectionTarget current && current.ScreenBounds.Contains(screenPoint)) ||
+                 fastTarget is not null ? Cursors.Hand : Cursors.Cross;
+        _smartRefineTimer.Stop();
+        if (fastTarget is not null) _smartRefineTimer.Start();
     }
 
     private void OfferSmartTarget(
@@ -1903,16 +2166,23 @@ public class OverlayForm : Form
         Point screenPoint,
         bool allowImmediate = false)
     {
-        if (proposedTarget is not SmartSelectionTarget proposed) return;
+        if (proposedTarget is not SmartSelectionTarget proposed)
+        {
+            if (_smartTarget is not null) QueueSmartTarget(null);
+            else ClearPendingSmartTarget();
+            return;
+        }
 
         if (_smartTarget is not SmartSelectionTarget current || allowImmediate)
         {
+            ClearPendingSmartTarget();
             CommitSmartTarget(proposed);
             return;
         }
 
         if (IsSameSmartRegion(current, proposed))
         {
+            ClearPendingSmartTarget();
             if (!string.Equals(current.Label, proposed.Label, StringComparison.Ordinal) &&
                 IsGenericSmartLabel(current.Label) &&
                 !IsGenericSmartLabel(proposed.Label))
@@ -1928,25 +2198,77 @@ public class OverlayForm : Form
         bool coarserTarget = proposed.ScreenBounds.Contains(current.ScreenBounds);
 
         // A native/window fallback must never pull a stable small control back to its parent.
-        if (coarserTarget && current.ScreenBounds.Contains(screenPoint))
+        if (coarserTarget && current.WindowHandle == proposed.WindowHandle &&
+            current.ScreenBounds.Contains(screenPoint))
         {
+            ClearPendingSmartTarget();
             return;
         }
 
         // Overlapping peers cannot steal focus until the pointer has actually left the current one.
-        if (!nestedTarget && current.ScreenBounds.Contains(screenPoint))
+        if (!nestedTarget && current.WindowHandle == proposed.WindowHandle &&
+            current.ScreenBounds.Contains(screenPoint))
         {
+            ClearPendingSmartTarget();
             return;
         }
 
-        CommitSmartTarget(proposed);
+        QueueSmartTarget(proposed);
     }
 
-    private void CommitSmartTarget(SmartSelectionTarget target)
+    private void QueueSmartTarget(SmartSelectionTarget? target)
     {
-        bool changed = _smartTarget is not SmartSelectionTarget current ||
-                       !IsSameSmartRegion(current, target) ||
-                       !string.Equals(current.Label, target.Label, StringComparison.Ordinal);
+        if (_smartTargetPending &&
+            (_smartPendingTarget is null && target is null ||
+             _smartPendingTarget is SmartSelectionTarget pending &&
+             target is SmartSelectionTarget proposed && IsSameSmartRegion(pending, proposed)))
+        {
+            if (target is not null) _smartPendingTarget = target;
+            return;
+        }
+
+        _smartPendingTarget = target;
+        _smartTargetPending = true;
+        _smartPendingSince = Environment.TickCount64;
+        _smartSwitchTimer.Start();
+    }
+
+    private void ClearPendingSmartTarget()
+    {
+        _smartSwitchTimer.Stop();
+        _smartTargetPending = false;
+        _smartPendingTarget = null;
+    }
+
+    private void CommitPendingSmartTarget()
+    {
+        if (!_smartTargetPending || !Visible || _hasSelection || _pendingSmartClick ||
+            _dragMode != DragMode.None)
+        {
+            ClearPendingSmartTarget();
+            return;
+        }
+
+        TryCommitPendingSmartTarget(Environment.TickCount64);
+    }
+
+    private void TryCommitPendingSmartTarget(long now)
+    {
+        if (!_smartTargetPending || now - _smartPendingSince < SmartSelectionSwitchDelay) return;
+        SmartSelectionTarget? pending = _smartPendingTarget;
+        Point screenPoint = PointToScreen(_pendingSmartPoint);
+        bool stillCurrent = pending is SmartSelectionTarget proposed
+            ? proposed.ScreenBounds.Contains(screenPoint) &&
+              _smartFastTarget is SmartSelectionTarget fast &&
+              fast.WindowHandle == proposed.WindowHandle && fast.ScreenBounds.Contains(screenPoint)
+            : _smartFastTarget is null;
+        ClearPendingSmartTarget();
+        if (stillCurrent) CommitSmartTarget(pending);
+    }
+
+    private void CommitSmartTarget(SmartSelectionTarget? target)
+    {
+        bool changed = _smartTarget != target;
         _smartTarget = target;
         if (changed) Invalidate();
     }
@@ -1961,7 +2283,8 @@ public class OverlayForm : Form
 
     private async void RefineSmartSelection()
     {
-        if (_smartSelectionResolving || _hasSelection || _pendingSmartClick || !Visible)
+        if (_smartSelectionResolving || _hasSelection || _pendingSmartClick ||
+            _dragMode != DragMode.None || !Visible)
         {
             return;
         }
@@ -1985,18 +2308,21 @@ public class OverlayForm : Form
             _smartSelectionResolving = false;
         }
 
-        if (IsDisposed || !Visible || _hasSelection || _pendingSmartClick) return;
+        if (IsDisposed || !Visible || _hasSelection || _pendingSmartClick ||
+            _dragMode != DragMode.None) return;
         Point currentScreenPoint = PointToScreen(_pendingSmartPoint);
         bool fastTargetIsCurrent = _smartFastTarget is SmartSelectionTarget latestFastTarget &&
                                    IsSameSmartRegion(latestFastTarget, fastTarget);
-        if (fastTargetIsCurrent && refined.ScreenBounds.Contains(currentScreenPoint))
+        if (version == _smartSelectionVersion && fastTargetIsCurrent &&
+            refined.ScreenBounds.Contains(currentScreenPoint))
         {
             OfferSmartTarget(refined, currentScreenPoint);
         }
 
         if (version != _smartSelectionVersion && _smartFastTarget is not null)
         {
-            RefineSmartSelection();
+            _smartRefineTimer.Stop();
+            _smartRefineTimer.Start();
         }
     }
 
@@ -2127,15 +2453,7 @@ public class OverlayForm : Form
     {
         ThemePalette palette = ThemeManager.Palette;
         string label = $"{_selection.Width} × {_selection.Height}";
-        Size size = TextRenderer.MeasureText(graphics, label, SizeLabelFont, Size.Empty, TextFormatFlags.NoPadding);
-        int labelWidth = size.Width + 16;
-        int labelHeight = size.Height + 6;
-
-        int x = Math.Clamp(_selection.Left, 4, Math.Max(4, ClientSize.Width - labelWidth - 4));
-        int y = _selection.Top - labelHeight - 8 < 4
-            ? _selection.Top + 8
-            : _selection.Top - labelHeight - 8;
-        var bounds = new Rectangle(x, y, labelWidth, labelHeight);
+        Rectangle bounds = GetSizeLabelBounds(_selection);
 
         // Soft subtle drop shadow
         var shadowBounds = new Rectangle(bounds.X, bounds.Y + 1, bounds.Width, bounds.Height);
@@ -2160,47 +2478,48 @@ public class OverlayForm : Form
             TextFormatFlags.HorizontalCenter |
             TextFormatFlags.VerticalCenter |
             TextFormatFlags.SingleLine |
+            TextFormatFlags.PreserveGraphicsClipping |
             TextFormatFlags.NoPadding);
     }
 
-    private Rectangle ComputeSelectionDirtyRect(Rectangle oldSel, Rectangle newSel)
+    private Region ComputeSelectionDirtyRegion(Rectangle oldSel, Rectangle newSel)
     {
-        Rectangle union;
-        if (oldSel.IsEmpty || oldSel.Width <= 0 || oldSel.Height <= 0)
-        {
-            union = newSel;
-        }
-        else if (newSel.IsEmpty || newSel.Width <= 0 || newSel.Height <= 0)
-        {
-            union = oldSel;
-        }
-        else
-        {
-            union = Rectangle.Union(oldSel, newSel);
-        }
-
-        int margin = HandleSize + 18;
-        union.Inflate(margin, margin);
-
-        Rectangle oldLabel = GetSizeLabelDirtyBounds(oldSel);
-        Rectangle newLabel = GetSizeLabelDirtyBounds(newSel);
-        if (!oldLabel.IsEmpty) union = Rectangle.Union(union, oldLabel);
-        if (!newLabel.IsEmpty) union = Rectangle.Union(union, newLabel);
-
-        return Rectangle.Intersect(union, ClientRectangle);
+        // Only the symmetric difference changes from dimmed to clear (or back).
+        // The common interior stays untouched, even for a large selection.
+        if (oldSel.Width < MinimumSelectionSize || oldSel.Height < MinimumSelectionSize)
+            oldSel = Rectangle.Empty;
+        if (newSel.Width < MinimumSelectionSize || newSel.Height < MinimumSelectionSize)
+            newSel = Rectangle.Empty;
+        var dirty = new Region(oldSel);
+        dirty.Xor(newSel);
+        IncludeSelectionChrome(dirty, oldSel);
+        IncludeSelectionChrome(dirty, newSel);
+        dirty.Intersect(ClientRectangle);
+        return dirty;
     }
 
-    private Rectangle GetSizeLabelDirtyBounds(Rectangle sel)
+    private void IncludeSelectionChrome(Region dirty, Rectangle selection)
     {
-        if (sel.IsEmpty || sel.Width <= 0 || sel.Height <= 0) return Rectangle.Empty;
-        int width = 120;
-        int height = 30;
+        if (selection.IsEmpty) return;
+        Rectangle outer = Rectangle.Inflate(selection, HandleSize, HandleSize);
+        Rectangle inner = Rectangle.Inflate(selection, -HandleSize, -HandleSize);
+        using var border = new Region(outer);
+        if (inner.Width > 0 && inner.Height > 0) border.Exclude(inner);
+        dirty.Union(border);
+        dirty.Union(Rectangle.Inflate(GetSizeLabelBounds(selection), 3, 3));
+    }
+
+    private Rectangle GetSizeLabelBounds(Rectangle sel)
+    {
+        Size size = TextRenderer.MeasureText($"{sel.Width} × {sel.Height}", SizeLabelFont,
+            Size.Empty, TextFormatFlags.NoPadding);
+        int width = size.Width + 16;
+        int height = size.Height + 6;
         int y = sel.Top - height - 8 < 4
             ? sel.Top + 8
             : sel.Top - height - 8;
         int x = Math.Clamp(sel.Left, 4, Math.Max(4, ClientSize.Width - width - 4));
-        var bounds = new Rectangle(x - 4, y - 4, width + 8, height + 8);
-        return Rectangle.Intersect(bounds, ClientRectangle);
+        return new Rectangle(x, y, width, height);
     }
 
     private void DrawToolbar(Graphics graphics)
@@ -2334,6 +2653,8 @@ public class OverlayForm : Form
             }
         }
 
+        void AddColorPicker(int x, int y) => Add(StyleAction.ColorCustom, x, y, 28, 28);
+
         void AddPresets(StyleAction action, int y, params float[] values)
         {
             for (int index = 0; index < values.Length; index++)
@@ -2346,14 +2667,18 @@ public class OverlayForm : Form
         {
             case ToolbarAction.Pen:
                 AddPresets(StyleAction.SetPrimaryPreset, 6, 1, 2, 4, 8, 16, 32, 48);
-                AddColors(54, 47);
+                int penPickerX = Math.Min(366, bounds.Width - 36);
+                AddColors(54, 47, Math.Clamp((penPickerX - 54) / 28, 0, 11));
+                AddColorPicker(penPickerX, 47);
                 break;
             case ToolbarAction.Arrow:
                 AddPresets(StyleAction.SetPrimaryPreset, 6, 1, 2, 4, 8, 16, 32, 48);
                 Add(StyleAction.ArrowOpen, 54, 47, 36, 28);
                 Add(StyleAction.ArrowFilled, 94, 47, 36, 28);
                 Add(StyleAction.ArrowDouble, 134, 47, 36, 28);
-                AddColors(184, 47);
+                int arrowPickerX = Math.Min(500, bounds.Width - 36);
+                AddColors(184, 47, Math.Clamp((arrowPickerX - 184) / 28, 0, 11));
+                AddColorPicker(Math.Max(184, arrowPickerX), 47);
                 break;
             case ToolbarAction.Mosaic:
                 AddPresets(StyleAction.SetPrimaryPreset, 6, 8, 16, 24, 40, 60, 80);
@@ -2362,10 +2687,12 @@ public class OverlayForm : Form
             case ToolbarAction.Text:
                 Add(StyleAction.Bold, 270, 5, 30, 28);
                 Add(StyleAction.Italic, 304, 5, 30, 28);
-                AddColors(342, 5, 11, 24);
+                AddColors(342, 5, 11, 22);
+                AddColorPicker(588, 5);
                 break;
             default:
                 AddColors(12, 5);
+                AddColorPicker(324, 5);
                 break;
         }
         return buttons.ToArray();
@@ -2413,19 +2740,21 @@ public class OverlayForm : Form
             FontStyle configuredFontStyle = IsValidFontStyle(ConfigService.Current.AnnotationFontStyle)
                 ? (FontStyle)ConfigService.Current.AnnotationFontStyle
                 : FontStyle.Regular;
-            Color configuredColor = GetAnnotationColor();
+            Color configuredColor = _selectedArrow?.Color ?? GetAnnotationColor();
                 foreach (StyleButton button in GetStyleButtons())
                 {
                     bool active = button.Action switch
                     {
                         StyleAction.Bold => configuredFontStyle.HasFlag(FontStyle.Bold),
                         StyleAction.Italic => configuredFontStyle.HasFlag(FontStyle.Italic),
-                        StyleAction.ArrowOpen => ConfigService.Current.AnnotationArrowStyle == AnnotationArrowStyle.Open,
-                        StyleAction.ArrowFilled => ConfigService.Current.AnnotationArrowStyle == AnnotationArrowStyle.Filled,
-                        StyleAction.ArrowDouble => ConfigService.Current.AnnotationArrowStyle == AnnotationArrowStyle.Double,
+                        StyleAction.ArrowOpen => (_selectedArrow?.Style ?? ConfigService.Current.AnnotationArrowStyle) == AnnotationArrowStyle.Open,
+                        StyleAction.ArrowFilled => (_selectedArrow?.Style ?? ConfigService.Current.AnnotationArrowStyle) == AnnotationArrowStyle.Filled,
+                        StyleAction.ArrowDouble => (_selectedArrow?.Style ?? ConfigService.Current.AnnotationArrowStyle) == AnnotationArrowStyle.Double,
                         StyleAction.SetPrimaryPreset => IsPrimaryPresetActive(button.Value),
                         StyleAction.SetSecondaryPreset => Math.Abs(ConfigService.Current.AnnotationMosaicPixelSize - button.Value) < 0.1f,
                         _ when IsColorAction(button.Action) => ColorsEqual(configuredColor, GetStyleColor(button.Action)),
+                        StyleAction.ColorCustom => !Enum.GetValues<StyleAction>().Where(IsColorAction)
+                            .Any(preset => ColorsEqual(configuredColor, GetStyleColor(preset))),
                         _ => false
                     };
 
@@ -2468,6 +2797,12 @@ public class OverlayForm : Form
         hash.Add(ConfigService.Current.AnnotationFontStyle);
         hash.Add(ConfigService.Current.AnnotationArrowStyle);
         hash.Add(ConfigService.Current.AnnotationColorHex, StringComparer.OrdinalIgnoreCase);
+        if (_selectedArrow is not null)
+        {
+            hash.Add(_selectedArrow.Color.ToArgb());
+            hash.Add(_selectedArrow.Width);
+            hash.Add(_selectedArrow.Style);
+        }
         return hash.ToHashCode();
     }
 
@@ -2533,6 +2868,23 @@ public class OverlayForm : Form
         Color color,
         ThemePalette palette)
     {
+        if (button.Action == StyleAction.ColorCustom)
+        {
+            Color[] choices = [Color.Red, Color.Orange, Color.Yellow, Color.LimeGreen,
+                Color.DeepSkyBlue, Color.MediumPurple];
+            for (int i = 0; i < choices.Length; i++)
+            {
+                using SKPaint tile = SkiaDrawing.Fill(choices[i]);
+                var rect = new Rectangle(button.Bounds.Left + 4 + i % 3 * 7,
+                    button.Bounds.Top + 5 + i / 3 * 8, 7, 8);
+                canvas.DrawRect(SkiaDrawing.ToSkRect(rect), tile);
+            }
+            using SKPaint border = SkiaDrawing.Stroke(WithAlpha(palette.TextPrimary, 145), 1f);
+            canvas.DrawRoundRect(SkiaDrawing.ToSkRect(new Rectangle(button.Bounds.Left + 3,
+                button.Bounds.Top + 4, 22, 17)), 2f, 2f, border);
+            return;
+        }
+
         if (IsColorAction(button.Action))
         {
             Color swatch = GetStyleColor(button.Action);
@@ -2626,18 +2978,33 @@ public class OverlayForm : Form
                 break;
             case StyleAction.SetPrimaryPreset:
                 ConfigService.Current.AnnotationPenWidth = Math.Clamp(button.Value, 1f, 48f);
+                UpdateSelectedArrow(arrow => arrow.Width = ConfigService.Current.AnnotationPenWidth);
                 break;
             case StyleAction.SetSecondaryPreset:
                 ConfigService.Current.AnnotationMosaicPixelSize = (int)Math.Clamp(button.Value, 4f, 32f);
                 break;
             case StyleAction.ArrowOpen:
-                ConfigService.Current.AnnotationArrowStyle = AnnotationArrowStyle.Open;
+                SetArrowStyle(AnnotationArrowStyle.Open);
                 break;
             case StyleAction.ArrowFilled:
-                ConfigService.Current.AnnotationArrowStyle = AnnotationArrowStyle.Filled;
+                SetArrowStyle(AnnotationArrowStyle.Filled);
                 break;
             case StyleAction.ArrowDouble:
-                ConfigService.Current.AnnotationArrowStyle = AnnotationArrowStyle.Double;
+                SetArrowStyle(AnnotationArrowStyle.Double);
+                break;
+            case StyleAction.ColorCustom:
+                using (var dialog = new ColorDialog
+                {
+                    AnyColor = true,
+                    FullOpen = true,
+                    Color = _selectedArrow?.Color ?? GetAnnotationColor(),
+                    CustomColors = (ConfigService.Current.TrayIconCustomPalette ?? [])
+                        .Take(16).Select(color => ColorTranslator.ToOle(ColorTranslator.FromHtml(color))).ToArray()
+                })
+                {
+                    if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                    SetAnnotationStyleColor(dialog.Color);
+                }
                 break;
             case StyleAction.Bold:
                 ToggleConfiguredFontStyle(FontStyle.Bold);
@@ -2648,8 +3015,7 @@ public class OverlayForm : Form
             default:
                 if (IsColorAction(action))
                 {
-                    Color color = GetStyleColor(action);
-                    ConfigService.Current.AnnotationColorHex = $"#{color.R:X2}{color.G:X2}{color.B:X2}";
+                    SetAnnotationStyleColor(GetStyleColor(action));
                 }
                 break;
         }
@@ -2658,6 +3024,27 @@ public class OverlayForm : Form
         ApplyInlineTextStyle();
         UpdateInlineStyleControls();
         Invalidate(GetStyleBarBounds());
+    }
+
+    private void SetAnnotationStyleColor(Color color)
+    {
+        Color opaque = Color.FromArgb(255, color);
+        ConfigService.Current.AnnotationColorHex = $"#{opaque.R:X2}{opaque.G:X2}{opaque.B:X2}";
+        UpdateSelectedArrow(arrow => arrow.Color = opaque);
+    }
+
+    private void SetArrowStyle(AnnotationArrowStyle style)
+    {
+        ConfigService.Current.AnnotationArrowStyle = style;
+        UpdateSelectedArrow(arrow => arrow.Style = style);
+    }
+
+    private void UpdateSelectedArrow(Action<ArrowAnnotation> update)
+    {
+        if (_selectedArrow is not ArrowAnnotation arrow) return;
+        RectangleF before = GetAnnotationBounds(arrow);
+        update(arrow);
+        InvalidateAnnotationBounds(RectangleF.Union(before, GetAnnotationBounds(arrow)));
     }
 
     private bool TryBeginStyleSlider(Point point)
@@ -2704,9 +3091,10 @@ public class OverlayForm : Form
         return new Rectangle(bounds.Left + 216, rowTop, 44, 30);
     }
 
-    private static (float Minimum, float Maximum, float Value) GetStyleSliderValues(StyleSliderKind kind) => kind switch
+    private (float Minimum, float Maximum, float Value) GetStyleSliderValues(StyleSliderKind kind) => kind switch
     {
-        StyleSliderKind.PenWidth => (1f, 48f, Math.Clamp(ConfigService.Current.AnnotationPenWidth, 0.5f, MaxCustomPenWidth)),
+        StyleSliderKind.PenWidth => (1f, 48f,
+            Math.Clamp(_selectedArrow?.Width ?? ConfigService.Current.AnnotationPenWidth, 0.5f, MaxCustomPenWidth)),
         StyleSliderKind.MosaicBrush => (8f, 80f, Math.Clamp(ConfigService.Current.AnnotationMosaicSize, 1f, MaxCustomMosaicBrush)),
         StyleSliderKind.MosaicPixel => (4f, 32f, Math.Clamp(ConfigService.Current.AnnotationMosaicPixelSize, 1, MaxCustomMosaicPixel)),
         _ => (0f, 1f, 0f)
@@ -2787,6 +3175,7 @@ public class OverlayForm : Form
                 {
                     case StyleSliderKind.PenWidth:
                         ConfigService.Current.AnnotationPenWidth = Math.Clamp(value, 0.5f, MaxCustomPenWidth);
+                        UpdateSelectedArrow(arrow => arrow.Width = ConfigService.Current.AnnotationPenWidth);
                         break;
                     case StyleSliderKind.MosaicBrush:
                         ConfigService.Current.AnnotationMosaicSize = Math.Clamp(value, 1f, MaxCustomMosaicBrush);
@@ -2835,6 +3224,7 @@ public class OverlayForm : Form
         {
             case StyleSliderKind.PenWidth:
                 ConfigService.Current.AnnotationPenWidth = Math.Clamp(MathF.Round(raw * 2f) / 2f, 1f, 48f);
+                UpdateSelectedArrow(arrow => arrow.Width = ConfigService.Current.AnnotationPenWidth);
                 break;
             case StyleSliderKind.MosaicBrush:
                 ConfigService.Current.AnnotationMosaicSize = Math.Clamp(MathF.Round(raw / 2f) * 2f, 8f, 80f);
@@ -2848,7 +3238,7 @@ public class OverlayForm : Form
 
     private bool IsPrimaryPresetActive(float value) => _activeTool == ToolbarAction.Mosaic
         ? Math.Abs(ConfigService.Current.AnnotationMosaicSize - value) < 0.1f
-        : Math.Abs(ConfigService.Current.AnnotationPenWidth - value) < 0.1f;
+        : Math.Abs((_selectedArrow?.Width ?? ConfigService.Current.AnnotationPenWidth) - value) < 0.1f;
 
     private static void ToggleConfiguredFontStyle(FontStyle flag)
     {
@@ -3151,11 +3541,11 @@ public class OverlayForm : Form
         float width,
         AnnotationArrowStyle style) : AnnotationItem
     {
-        public PointF Start { get; } = start;
+        public PointF Start { get; set; } = start;
         public PointF End { get; set; } = end;
-        public Color Color { get; } = color;
-        public float Width { get; } = width;
-        public AnnotationArrowStyle Style { get; } = style;
+        public Color Color { get; set; } = color;
+        public float Width { get; set; } = width;
+        public AnnotationArrowStyle Style { get; set; } = style;
     }
 
     private sealed class TextAnnotation(
@@ -3229,7 +3619,8 @@ public class OverlayForm : Form
         ColorPink,
         ColorWhite,
         ColorGray,
-        ColorBlack
+        ColorBlack,
+        ColorCustom
     }
 
     private enum StyleSliderKind
@@ -3239,4 +3630,6 @@ public class OverlayForm : Form
         MosaicBrush,
         MosaicPixel
     }
+
+    private enum ArrowEditMode { None, Move, Start, End }
 }

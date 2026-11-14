@@ -70,6 +70,7 @@ public class TrayAppContext : ApplicationContext
             ShowInTaskbar = !startMinimizedToTray
         };
         _mainForm.RequestCapture += StartCapture;
+        _mainForm.AttachHotkeyService(_hotkeyService);
         _mainForm.RequestHotkeyChange += (command, gesture, forceBinding) =>
         {
             HotkeyChangeResult result = _hotkeyService.TryUpdateHotkey(command, gesture, forceBinding);
@@ -737,7 +738,7 @@ public class TrayAppContext : ApplicationContext
         {
             _ocrMode = false;
             _defaultCaptureAction = CaptureCompletionAction.Default;
-            Bitmap bitmap = CaptureService.CaptureScreen(bounds);
+            Bitmap bitmap = CaptureService.CaptureScreen(bounds, preferDesktopDuplication: ShouldPreserveForegroundForCapture());
             AppDiagnostics.LogMessage("Capture.Screen", "Current screen captured.", LogEventLevel.Debug);
             OnCaptured(bitmap, bounds.Location, CaptureCompletionAction.Default);
         }

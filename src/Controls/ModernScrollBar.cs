@@ -1,4 +1,4 @@
-using System.Drawing.Drawing2D;
+﻿using System.Drawing.Drawing2D;
 using ZSnaper.Helpers;
 using ZSnaper.Services;
 
@@ -6,8 +6,8 @@ namespace ZSnaper.Controls;
 
 public sealed class ModernScrollBar : Control
 {
-    private const int TrackInset = 3;
-    private const int MinimumThumbLength = 34;
+    private int TrackInset => GraphicsHelper.Dip(this, 3);
+    private int MinimumThumbLength => GraphicsHelper.Dip(this, 34);
     private const int AutoHideDelayMs = 650;
 
     private readonly UiAnimationTimer _fadeTimer;
@@ -184,7 +184,7 @@ public sealed class ModernScrollBar : Control
         graphics.SmoothingMode = SmoothingMode.AntiAlias;
         var palette = ThemeManager.Palette;
 
-        int trackWidth = _isHovered || _isDragging ? 6 : 4;
+        int trackWidth = GraphicsHelper.Dip(this, _isHovered || _isDragging ? 6 : 4);
         int x = (Width - trackWidth) / 2;
         if (_isHovered || _isDragging)
         {

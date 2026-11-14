@@ -1,6 +1,4 @@
-using System.Diagnostics;
-using System.Drawing.Drawing2D;
-using ZSnaper.Helpers;
+﻿using ZSnaper.Helpers;
 using ZSnaper.Models;
 using ZSnaper.Services;
 
@@ -8,58 +6,49 @@ namespace ZSnaper.Controls;
 
 public class AnimationSegmentedControl : Control
 {
-    private float _sliderIndex = 1f; // 0.0 = 精简, 1.0 = 默认, 2.0 = 极度优雅
-    private float _startPos = 1f;
-    private float _targetPos = 1f;
-    private readonly System.Windows.Forms.Timer _animTimer;
-    private readonly Stopwatch _stopwatch = new();
-    private int _durationMs = 200;
+    private static readonly string[] Labels = ["精简", "默认", "优雅"];
+    private readonly SmoothValueAnimator _sliderAnimator;
+    private readonly SmoothValueAnimator _hoverAnimator;
+    private int _hoveredIndex = -1;
+    private int _paintHoveredIndex = -1;
 
     public AnimationSegmentedControl()
     {
         DoubleBuffered = true;
         SetStyle(ControlStyles.SupportsTransparentBackColor, true);
-        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true);
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.Selectable, true);
         BackColor = Color.Transparent;
         Cursor = Cursors.Hand;
-        Size = new Size(185, 28);
-        Font = new Font("Microsoft YaHei UI", 8.2f, FontStyle.Regular);
+        Size = new Size(210, 36);
+        Font = new Font("Microsoft YaHei UI", 9f, FontStyle.Regular);
+        TabStop = true;
+        AccessibleRole = AccessibleRole.Grouping;
 
-        _sliderIndex = (int)ConfigService.Current.AnimationMode;
-        _startPos = _sliderIndex;
-        _targetPos = _sliderIndex;
-
-        _animTimer = new System.Windows.Forms.Timer { Interval = 15 };
-        _animTimer.Tick += OnAnimTick;
+        float initial = Math.Clamp((int)ConfigService.Current.AnimationMode, 0, Labels.Length - 1);
+        _sliderAnimator = new SmoothValueAnimator(this, initial, Invalidate, defaultDurationMs: 175);
+        _hoverAnimator = new SmoothValueAnimator(this, 0f, Invalidate, defaultDurationMs: 110);
 
         ThemeManager.ThemeChanged += Invalidate;
     }
 
-    private void StartAnimation(float target)
+    protected override void OnMouseMove(MouseEventArgs e)
     {
-        _startPos = _sliderIndex;
-        _targetPos = target;
-        _durationMs = Math.Max(40, ConfigService.GetAnimationDuration(180));
-        _stopwatch.Restart();
-        _animTimer.Start();
+        base.OnMouseMove(e);
+        int hovered = SegmentedPillRenderer.HitTest(Width, Labels.Length, e.X);
+        if (_hoveredIndex != hovered)
+        {
+            _hoveredIndex = hovered;
+            if (hovered >= 0) _paintHoveredIndex = hovered;
+            _hoverAnimator.SetTarget(hovered >= 0 ? 1f : 0f);
+            Invalidate();
+        }
     }
 
-    private void OnAnimTick(object? sender, EventArgs e)
+    protected override void OnMouseLeave(EventArgs e)
     {
-        float elapsed = _stopwatch.ElapsedMilliseconds;
-        float t = Math.Clamp(elapsed / _durationMs, 0f, 1f);
-
-        float ease = 1f - MathF.Pow(1f - t, 3f);
-        _sliderIndex = _startPos + (_targetPos - _startPos) * ease;
-
-        Invalidate();
-
-        if (t >= 1f)
-        {
-            _sliderIndex = _targetPos;
-            _animTimer.Stop();
-            _stopwatch.Stop();
-        }
+        base.OnMouseLeave(e);
+        _hoveredIndex = -1;
+        _hoverAnimator.SetTarget(0f);
     }
 
     protected override void OnMouseClick(MouseEventArgs e)
@@ -67,67 +56,59 @@ public class AnimationSegmentedControl : Control
         base.OnMouseClick(e);
         if (e.Button == MouseButtons.Left)
         {
-            float segWidth = Width / 3f;
-            int selected = Math.Clamp((int)(e.X / segWidth), 0, 2);
-            var mode = (AnimationLevel)selected;
-
-            if (ConfigService.Current.AnimationMode != mode)
-            {
-                ConfigService.Current.AnimationMode = mode;
-                ConfigService.Save();
-                StartAnimation(selected);
-            }
+            Focus();
+            int selected = SegmentedPillRenderer.HitTest(Width, Labels.Length, e.X);
+            if (selected >= 0) SelectMode(selected);
         }
     }
+
+    private void SelectMode(int index)
+    {
+        int clamped = Math.Clamp(index, 0, Labels.Length - 1);
+        ConfigService.Current.AnimationMode = (AnimationLevel)clamped;
+        ConfigService.Save();
+        _sliderAnimator.SetTarget(clamped);
+        AccessibilityNotifyClients(AccessibleEvents.Selection, clamped + 1);
+    }
+
+    protected override bool IsInputKey(Keys keyData) =>
+        keyData is Keys.Left or Keys.Right or Keys.Home or Keys.End || base.IsInputKey(keyData);
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        int current = (int)ConfigService.Current.AnimationMode;
+        int next = e.KeyCode switch
+        {
+            Keys.Left => current - 1,
+            Keys.Right => current + 1,
+            Keys.Home => 0,
+            Keys.End => Labels.Length - 1,
+            _ => current
+        };
+        if (next == current) return;
+        SelectMode(next);
+        e.Handled = e.SuppressKeyPress = true;
+    }
+
+    protected override AccessibleObject CreateAccessibilityInstance() => new SegmentedControlAccessibility(
+        this, Labels, () => (int)ConfigService.Current.AnimationMode, SelectMode);
+
+    protected override void OnGotFocus(EventArgs e) { base.OnGotFocus(e); Invalidate(); }
+    protected override void OnLostFocus(EventArgs e) { base.OnLostFocus(e); Invalidate(); }
 
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
-        var g = e.Graphics;
-        g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
-
-        var palette = ThemeManager.Palette;
-        var isDark = palette.Mode == ThemeMode.Dark;
-        var rect = new Rectangle(0, 0, Width - 1, Height - 1);
-
-        // 外层背景胶囊
-        using (var bgPath = GraphicsHelper.GetRoundedRectangle(rect, Height / 2))
-        {
-            Color outerBg = isDark ? Color.FromArgb(40, 255, 255, 255) : Color.FromArgb(20, 0, 0, 0);
-            using var bgBrush = new SolidBrush(outerBg);
-            g.FillPath(bgBrush, bgPath);
-        }
-
-        float segWidth = Width / 3f;
-
-        // 平滑滑动的胶囊滑块
-        float startX = 2f;
-        float currentX = startX + _sliderIndex * (segWidth - 1.3f);
-
-        var activeRect = new RectangleF(currentX, 2f, segWidth - 3f, Height - 5f);
-        using (var activePath = GraphicsHelper.GetRoundedRectangle(Rectangle.Round(activeRect), (Height - 5) / 2))
-        {
-            using var activeBrush = new SolidBrush(palette.AccentColor);
-            g.FillPath(activeBrush, activePath);
-        }
-
-        // "精简" / "默认" / "优雅"
-        string[] labels = ["精简", "默认", "优雅"];
-        using var sf = new StringFormat
-        {
-            Alignment = StringAlignment.Center,
-            LineAlignment = StringAlignment.Center
-        };
-
-        for (int i = 0; i < 3; i++)
-        {
-            var textRect = new RectangleF(i * segWidth, 0, segWidth, Height);
-            bool isActive = Math.Abs(_sliderIndex - i) < 0.5f;
-
-            using var textBrush = new SolidBrush(isActive ? palette.AccentForeground : palette.TextMuted);
-            g.DrawString(labels[i], Font, textBrush, textRect, sf);
-        }
+        SegmentedPillRenderer.Draw(
+            this,
+            e.Graphics,
+            Labels,
+            _sliderAnimator.Value,
+            _paintHoveredIndex,
+            _hoverAnimator.Value,
+            borderedCardStyle: true,
+            Focused && ShowFocusCues);
     }
 
     protected override void Dispose(bool disposing)
@@ -135,8 +116,8 @@ public class AnimationSegmentedControl : Control
         if (disposing)
         {
             ThemeManager.ThemeChanged -= Invalidate;
-            _animTimer.Stop();
-            _animTimer.Dispose();
+            _sliderAnimator.Dispose();
+            _hoverAnimator.Dispose();
         }
         base.Dispose(disposing);
     }

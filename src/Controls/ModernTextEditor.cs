@@ -1,4 +1,4 @@
-using System.Drawing.Drawing2D;
+﻿using System.Drawing.Drawing2D;
 using ZSnaper.Helpers;
 using ZSnaper.Interop;
 using ZSnaper.Services;
@@ -59,6 +59,8 @@ public sealed class ModernTextEditor : Control
             AcceptsTab = true,
             WordWrap = true,
             Font = new Font("Consolas", 10f),
+            AccessibleName = "识别文本",
+            AccessibleDescription = "Ctrl+Tab 切换到下一个控件，Ctrl+Shift+Tab 切换到上一个控件",
             Location = new Point(14, 12)
         };
         _editor.TextChanged += (_, _) =>
@@ -70,6 +72,14 @@ public sealed class ModernTextEditor : Control
         _editor.ScrollChanged += (_, _) => QueueScrollSync();
         _editor.GotFocus += (_, _) => Invalidate();
         _editor.LostFocus += (_, _) => Invalidate();
+        _editor.KeyDown += (_, e) =>
+        {
+            if (e.Control && e.KeyCode == Keys.Tab)
+            {
+                FindForm()?.SelectNextControl(_editor, !e.Shift, true, true, true);
+                e.Handled = e.SuppressKeyPress = true;
+            }
+        };
 
         _scrollBar = new ModernScrollBar
         {
@@ -143,10 +153,12 @@ public sealed class ModernTextEditor : Control
             return;
         }
 
-        int scrollWidth = 16;
-        _scrollBar.Bounds = new Rectangle(Width - scrollWidth - 3, 8, scrollWidth, Math.Max(1, Height - 16));
-        _editor.Bounds = new Rectangle(14, 12, Math.Max(1, Width - scrollWidth - 26), Math.Max(1, Height - 24));
-        _placeholder.Width = Math.Max(1, _editor.Width - 4);
+        int D(int value) => GraphicsHelper.Dip(this, value);
+        int scrollWidth = D(16);
+        _scrollBar.Bounds = new Rectangle(Width - scrollWidth - D(3), D(8), scrollWidth, Math.Max(1, Height - D(16)));
+        _editor.Bounds = new Rectangle(D(14), D(12), Math.Max(1, Width - scrollWidth - D(26)), Math.Max(1, Height - D(24)));
+        _placeholder.Location = _editor.Location;
+        _placeholder.Width = Math.Max(1, _editor.Width - D(4));
         QueueScrollSync();
     }
 
@@ -165,19 +177,19 @@ public sealed class ModernTextEditor : Control
         Graphics graphics = e.Graphics;
         graphics.SmoothingMode = SmoothingMode.AntiAlias;
         var palette = ThemeManager.Palette;
-        var rect = new Rectangle(0, 0, Width - 1, Height - 1);
+        var rect = new Rectangle(1, 1, Width - 3, Height - 3);
         if (rect.Width <= 0 || rect.Height <= 0) return;
 
-        using GraphicsPath path = GraphicsHelper.GetRoundedRectangle(rect, 12);
+        using GraphicsPath path = GraphicsHelper.GetRoundedRectangle(rect, GraphicsHelper.Dip(this, 12));
         using (var fillBrush = new SolidBrush(palette.InputBg))
         {
             graphics.FillPath(fillBrush, path);
         }
 
         Color border = _editor.Focused
-            ? Color.FromArgb(150, palette.AccentColor)
+            ? palette.AccentColor
             : palette.InputBorder;
-        using var borderPen = new Pen(border, _editor.Focused ? 1.4f : 1f);
+        using var borderPen = new Pen(border, _editor.Focused ? 2f : 1f);
         graphics.DrawPath(borderPen, path);
     }
 

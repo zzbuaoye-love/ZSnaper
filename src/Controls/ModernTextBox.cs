@@ -10,7 +10,7 @@ public sealed class ModernTextBox : Control
     private readonly TextBox _editor;
     private bool _hovered;
 
-    public int CornerRadius { get; set; } = 7;
+    public int CornerRadius { get; set; } = 12;
 
     [System.Diagnostics.CodeAnalysis.AllowNull]
     public override string Text
@@ -132,7 +132,7 @@ public sealed class ModernTextBox : Control
         g.SmoothingMode = SmoothingMode.AntiAlias;
 
         ThemePalette palette = ThemeManager.Palette;
-        Rectangle rect = new(0, 0, Width - 1, Height - 1);
+        Rectangle rect = new(1, 1, Width - 3, Height - 3);
         if (rect.Width <= 0 || rect.Height <= 0) return;
 
         using GraphicsPath path = GraphicsHelper.GetRoundedRectangle(rect, CornerRadius);
@@ -152,7 +152,7 @@ public sealed class ModernTextBox : Control
         else if (_editor.Focused)
         {
             borderColor = palette.AccentColor;
-            penWidth = 1.4f;
+            penWidth = 2f;
         }
         else if (_hovered)
         {

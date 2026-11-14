@@ -18,6 +18,9 @@ public class ThemePalette
     // 侧边栏与容器
     public Color SidebarBg { get; init; }
     public Color SidebarBorder { get; init; }
+    public Color PrimaryContainer { get; init; }
+    public Color OnPrimaryContainer { get; init; }
+    public Color SurfaceContainerHigh { get; init; }
     public Color CardBg { get; init; }
     public Color CardBorder { get; init; }
 
@@ -42,7 +45,7 @@ public class ThemePalette
     {
         bool isLight = mode == ThemeMode.Light;
 
-        // “经典纯色”预设以 #1E293B 持久化：亮色使用深灰，暗色映射为近白。
+        // 黑白预设沿用 #1E293B 配置值：浅色使用纯黑，深色使用纯白
         bool isClassicMonoPreset = accentColor.R == 30 && accentColor.G == 41 && accentColor.B == 59;
         bool isMono = isClassicMonoPreset ||
                       (accentColor.R == accentColor.G && accentColor.G == accentColor.B) ||
@@ -57,8 +60,8 @@ public class ThemePalette
         }
         else if (isMono)
         {
-            glow1 = isLight ? Color.FromArgb(180, 200, 220) : Color.FromArgb(45, 55, 72);
-            glow2 = isLight ? Color.FromArgb(200, 215, 230) : Color.FromArgb(30, 41, 59);
+            glow1 = isLight ? Color.FromArgb(180, 180, 180) : Color.FromArgb(45, 45, 45);
+            glow2 = isLight ? Color.FromArgb(210, 210, 210) : Color.FromArgb(30, 30, 30);
         }
         else
         {
@@ -70,68 +73,79 @@ public class ThemePalette
 
         if (isLight)
         {
-            Color lightAccent = isMono ? Color.FromArgb(24, 28, 38) : accentColor;
+            Color lightAccent = isMono ? Color.Black : accentColor;
             return new ThemePalette
             {
                 Mode = ThemeMode.Light,
-                BackgroundColor = Color.FromArgb(243, 243, 243),
+                BackgroundColor = isMono ? Color.FromArgb(255, 255, 255) : Color.FromArgb(253, 252, 255),
                 GlowColor1 = glow1,
                 GlowColor2 = glow2,
 
-                SidebarBg = Color.FromArgb(243, 243, 243),
-                SidebarBorder = Color.FromArgb(30, 0, 0, 0),
-                CardBg = Color.FromArgb(255, 255, 255),
-                CardBorder = Color.FromArgb(229, 229, 229),
+                SidebarBg = isMono ? Color.FromArgb(243, 245, 248) : Color.FromArgb(244, 241, 249),
+                SidebarBorder = isMono ? Color.FromArgb(228, 232, 238) : Color.FromArgb(230, 224, 240),
+                CardBg = isMono ? Color.FromArgb(248, 249, 251) : Color.FromArgb(248, 245, 252),
+                CardBorder = isMono ? Color.FromArgb(223, 227, 235) : Color.FromArgb(221, 215, 232),
+                PrimaryContainer = BlendWithSurface(lightAccent, Color.White, isMono ? 0.06f : 0.11f),
+                OnPrimaryContainer = isMono ? Color.FromArgb(20, 22, 26) : Color.FromArgb(24, 22, 30),
+                SurfaceContainerHigh = isMono ? Color.FromArgb(235, 238, 244) : Color.FromArgb(237, 232, 245),
 
-                TextPrimary = Color.FromArgb(26, 26, 26),
-                TextSecondary = Color.FromArgb(82, 82, 82),
-                TextMuted = Color.FromArgb(112, 112, 112),
+                TextPrimary = isMono ? Color.FromArgb(20, 22, 26) : Color.FromArgb(24, 22, 30),
+                TextSecondary = isMono ? Color.FromArgb(74, 80, 90) : Color.FromArgb(76, 71, 86),
+                TextMuted = isMono ? Color.FromArgb(110, 117, 128) : Color.FromArgb(112, 106, 122),
 
                 AccentColor = lightAccent,
                 AccentForeground = GetContrastingForeground(lightAccent),
-                NavItemHover = Color.FromArgb(12, 0, 0, 0),
+                NavItemHover = isMono ? Color.FromArgb(16, 15, 23, 42) : Color.FromArgb(16, 61, 83, 111),
                 NavItemActive = lightAccent,
-                NavItemActiveText = Color.FromArgb(15, 23, 42),
-                SeparatorColor = Color.FromArgb(25, 0, 0, 0),
+                NavItemActiveText = isMono ? Color.Black : Color.FromArgb(15, 23, 42),
+                SeparatorColor = isMono ? Color.FromArgb(24, 15, 23, 42) : Color.FromArgb(26, 40, 30, 60),
                 WindowControlHover = Color.FromArgb(15, 0, 0, 0),
-                WindowControlText = Color.FromArgb(71, 85, 105),
+                WindowControlText = isMono ? Color.FromArgb(85, 90, 98) : Color.FromArgb(71, 85, 105),
                 InputBg = Color.FromArgb(255, 255, 255),
-                InputBorder = Color.FromArgb(210, 210, 210)
+                InputBorder = isMono ? Color.FromArgb(148, 154, 165) : Color.FromArgb(136, 130, 148)
             };
         }
         else
         {
-            // 暗色模式：纯黑白沉浸底色 + 自定义强调色
-            Color darkAccent = isMono ? Color.FromArgb(245, 245, 250) : accentColor;
+            Color darkAccent = isMono ? Color.White : accentColor;
             return new ThemePalette
             {
                 Mode = ThemeMode.Dark,
-                BackgroundColor = Color.FromArgb(32, 32, 32),
+                BackgroundColor = isMono ? Color.FromArgb(16, 17, 20) : Color.FromArgb(17, 15, 22),
                 GlowColor1 = glow1,
                 GlowColor2 = glow2,
 
-                SidebarBg = Color.FromArgb(32, 32, 32),
-                SidebarBorder = Color.FromArgb(35, 255, 255, 255),
-                CardBg = Color.FromArgb(50, 50, 50),
-                CardBorder = Color.FromArgb(62, 62, 62),
+                SidebarBg = isMono ? Color.FromArgb(25, 26, 31) : Color.FromArgb(26, 24, 33),
+                SidebarBorder = isMono ? Color.FromArgb(44, 46, 54) : Color.FromArgb(48, 43, 58),
+                CardBg = isMono ? Color.FromArgb(23, 24, 29) : Color.FromArgb(24, 22, 30),
+                CardBorder = isMono ? Color.FromArgb(52, 55, 65) : Color.FromArgb(56, 51, 68),
+                PrimaryContainer = BlendWithSurface(darkAccent,
+                    isMono ? Color.FromArgb(28, 30, 36) : Color.FromArgb(28, 25, 36), 0.16f),
+                OnPrimaryContainer = isMono ? Color.FromArgb(238, 240, 244) : Color.FromArgb(235, 230, 242),
+                SurfaceContainerHigh = isMono ? Color.FromArgb(37, 39, 46) : Color.FromArgb(39, 36, 48),
 
-                TextPrimary = Color.FromArgb(245, 245, 245),
-                TextSecondary = Color.FromArgb(205, 205, 205),
-                TextMuted = Color.FromArgb(163, 163, 163),
+                TextPrimary = isMono ? Color.FromArgb(236, 238, 242) : Color.FromArgb(235, 230, 242),
+                TextSecondary = isMono ? Color.FromArgb(182, 187, 196) : Color.FromArgb(190, 184, 202),
+                TextMuted = isMono ? Color.FromArgb(134, 140, 152) : Color.FromArgb(146, 140, 158),
 
                 AccentColor = darkAccent,
-                AccentForeground = GetContrastingForeground(darkAccent),
-                NavItemHover = Color.FromArgb(20, 255, 255, 255),
+                AccentForeground = isMono ? Color.Black : GetContrastingForeground(darkAccent),
+                NavItemHover = Color.FromArgb(22, 255, 255, 255),
                 NavItemActive = darkAccent,
                 NavItemActiveText = Color.White,
-                SeparatorColor = Color.FromArgb(35, 255, 255, 255),
+                SeparatorColor = Color.FromArgb(34, 255, 255, 255),
                 WindowControlHover = Color.FromArgb(30, 255, 255, 255),
-                WindowControlText = Color.FromArgb(201, 209, 217),
-                InputBg = Color.FromArgb(43, 43, 43),
-                InputBorder = Color.FromArgb(76, 76, 76)
+                WindowControlText = isMono ? Color.FromArgb(209, 213, 219) : Color.FromArgb(201, 209, 217),
+                InputBg = isMono ? Color.FromArgb(29, 31, 37) : Color.FromArgb(31, 28, 38),
+                InputBorder = isMono ? Color.FromArgb(92, 97, 108) : Color.FromArgb(106, 100, 118)
             };
         }
     }
+
+    private static Color BlendWithSurface(Color accent, Color surface, float amount) => Color.FromArgb(
+        (int)Math.Round(surface.R + (accent.R - surface.R) * amount),
+        (int)Math.Round(surface.G + (accent.G - surface.G) * amount),
+        (int)Math.Round(surface.B + (accent.B - surface.B) * amount));
 
     private static Color GetComplementaryGlow(Color accent)
     {

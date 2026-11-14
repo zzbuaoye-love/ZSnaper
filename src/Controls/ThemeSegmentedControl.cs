@@ -1,6 +1,4 @@
-using System.Diagnostics;
-using System.Drawing.Drawing2D;
-using ZSnaper.Helpers;
+﻿using ZSnaper.Helpers;
 using ZSnaper.Models;
 using ZSnaper.Services;
 
@@ -8,137 +6,101 @@ namespace ZSnaper.Controls;
 
 public class ThemeSegmentedControl : Control
 {
-    private float _sliderPosition = 0f; // 0.0 = 浅色 (左), 1.0 = 深色 (右)
-    private float _startPos = 0f;
-    private float _targetPos = 0f;
-    private readonly System.Windows.Forms.Timer _animTimer;
-    private readonly Stopwatch _stopwatch = new();
-    private int _durationMs = 200;
+    private static readonly string[] Labels = ["浅色", "深色"];
+    private readonly SmoothValueAnimator _sliderAnimator;
+    private readonly SmoothValueAnimator _hoverAnimator;
+    private int _hoveredIndex = -1;
+    private int _paintHoveredIndex = -1;
 
     public ThemeSegmentedControl()
     {
         DoubleBuffered = true;
         SetStyle(ControlStyles.SupportsTransparentBackColor, true);
-        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true);
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.Selectable, true);
         BackColor = Color.Transparent;
         Cursor = Cursors.Hand;
-        Size = new Size(130, 28);
-        Font = new Font("Microsoft YaHei UI", 8.5f, FontStyle.Regular);
+        Size = new Size(160, 36);
+        Font = new Font("Microsoft YaHei UI", 9f, FontStyle.Regular);
+        TabStop = true;
+        AccessibleRole = AccessibleRole.Grouping;
 
-        _sliderPosition = ThemeManager.CurrentMode == ThemeMode.Light ? 0f : 1f;
-
-        _animTimer = new System.Windows.Forms.Timer { Interval = 15 };
-        _animTimer.Tick += OnAnimTick;
+        float initial = ThemeManager.CurrentMode == ThemeMode.Light ? 0f : 1f;
+        _sliderAnimator = new SmoothValueAnimator(this, initial, Invalidate, defaultDurationMs: 175);
+        _hoverAnimator = new SmoothValueAnimator(this, 0f, Invalidate, defaultDurationMs: 110);
 
         ThemeManager.ThemeChanged += OnGlobalThemeChanged;
     }
 
     private void OnGlobalThemeChanged()
     {
-        float target = ThemeManager.CurrentMode == ThemeMode.Light ? 0f : 1f;
-        if (Math.Abs(_targetPos - target) > 0.01f)
-        {
-            StartAnimation(target);
-        }
-    }
-
-    private void StartAnimation(float target)
-    {
-        _startPos = _sliderPosition;
-        _targetPos = target;
-        _durationMs = Math.Max(40, ConfigService.GetAnimationDuration(180));
-        _stopwatch.Restart();
-        _animTimer.Start();
-    }
-
-    private void OnAnimTick(object? sender, EventArgs e)
-    {
-        float elapsed = _stopwatch.ElapsedMilliseconds;
-        float t = Math.Clamp(elapsed / _durationMs, 0f, 1f);
-
-        float ease = 1f - MathF.Pow(1f - t, 3f);
-        _sliderPosition = _startPos + (_targetPos - _startPos) * ease;
-
+        AccessibilityNotifyClients(AccessibleEvents.Selection, (int)ThemeManager.CurrentMode + 1);
+        _sliderAnimator.SetTarget(ThemeManager.CurrentMode == ThemeMode.Light ? 0f : 1f);
         Invalidate();
+    }
 
-        if (t >= 1f)
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        base.OnMouseMove(e);
+        int hovered = SegmentedPillRenderer.HitTest(Width, Labels.Length, e.X);
+        if (_hoveredIndex != hovered)
         {
-            _sliderPosition = _targetPos;
-            _animTimer.Stop();
-            _stopwatch.Stop();
+            _hoveredIndex = hovered;
+            if (hovered >= 0) _paintHoveredIndex = hovered;
+            _hoverAnimator.SetTarget(hovered >= 0 ? 1f : 0f);
+            Invalidate();
         }
+    }
+
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        base.OnMouseLeave(e);
+        _hoveredIndex = -1;
+        _hoverAnimator.SetTarget(0f);
     }
 
     protected override void OnMouseClick(MouseEventArgs e)
     {
         base.OnMouseClick(e);
-        if (e.Button == MouseButtons.Left)
+        if (e.Button != MouseButtons.Left) return;
+        Focus();
+        ThemeMode next = e.X < Width / 2 ? ThemeMode.Light : ThemeMode.Dark;
+        if (ThemeManager.CurrentMode != next)
         {
-            if (e.X < Width / 2 && ThemeManager.CurrentMode != ThemeMode.Light)
-            {
-                ThemeManager.CurrentMode = ThemeMode.Light;
-            }
-            else if (e.X >= Width / 2 && ThemeManager.CurrentMode != ThemeMode.Dark)
-            {
-                ThemeManager.CurrentMode = ThemeMode.Dark;
-            }
+            ThemeManager.CurrentMode = next;
         }
     }
+
+    protected override bool IsInputKey(Keys keyData) =>
+        keyData is Keys.Left or Keys.Right or Keys.Home or Keys.End || base.IsInputKey(keyData);
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        if (e.KeyCode is Keys.Left or Keys.Home) ThemeManager.CurrentMode = ThemeMode.Light;
+        else if (e.KeyCode is Keys.Right or Keys.End) ThemeManager.CurrentMode = ThemeMode.Dark;
+        else if (e.KeyCode is Keys.Space or Keys.Enter) ThemeManager.ToggleTheme();
+        else return;
+        e.Handled = e.SuppressKeyPress = true;
+    }
+
+    protected override AccessibleObject CreateAccessibilityInstance() => new SegmentedControlAccessibility(
+        this, Labels, () => (int)ThemeManager.CurrentMode, index => ThemeManager.CurrentMode = (ThemeMode)index);
+
+    protected override void OnGotFocus(EventArgs e) { base.OnGotFocus(e); Invalidate(); }
+    protected override void OnLostFocus(EventArgs e) { base.OnLostFocus(e); Invalidate(); }
 
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
-        var g = e.Graphics;
-        g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
-
-        var palette = ThemeManager.Palette;
-        var isDark = palette.Mode == ThemeMode.Dark;
-        var rect = new Rectangle(0, 0, Width - 1, Height - 1);
-
-        // 外层背景胶囊
-        using (var bgPath = GraphicsHelper.GetRoundedRectangle(rect, Height / 2))
-        {
-            Color outerBg = isDark ? Color.FromArgb(40, 255, 255, 255) : Color.FromArgb(20, 0, 0, 0);
-            using var bgBrush = new SolidBrush(outerBg);
-            g.FillPath(bgBrush, bgPath);
-        }
-
-        int halfWidth = Width / 2;
-
-        // 平滑滑动的胶囊滑块
-        float startX = 2f;
-        float endX = halfWidth + 1f;
-        float currentX = startX + (endX - startX) * _sliderPosition;
-
-        var activeRect = new RectangleF(currentX, 2f, halfWidth - 3f, Height - 5f);
-        using (var activePath = GraphicsHelper.GetRoundedRectangle(Rectangle.Round(activeRect), (Height - 5) / 2))
-        {
-            using var activeBrush = new SolidBrush(palette.AccentColor);
-            g.FillPath(activeBrush, activePath);
-        }
-
-        // 绘制文字 "浅色" & "深色"
-        using var sf = new StringFormat
-        {
-            Alignment = StringAlignment.Center,
-            LineAlignment = StringAlignment.Center
-        };
-
-        var lightRect = new Rectangle(0, 0, halfWidth, Height);
-        var darkRect = new Rectangle(halfWidth, 0, halfWidth, Height);
-
-        bool isLight = _sliderPosition < 0.5f;
-
-        using (var lightTextBrush = new SolidBrush(isLight ? palette.AccentForeground : palette.TextMuted))
-        {
-            g.DrawString("浅色", Font, lightTextBrush, lightRect, sf);
-        }
-
-        using (var darkTextBrush = new SolidBrush(!isLight ? palette.AccentForeground : palette.TextMuted))
-        {
-            g.DrawString("深色", Font, darkTextBrush, darkRect, sf);
-        }
+        SegmentedPillRenderer.Draw(
+            this,
+            e.Graphics,
+            Labels,
+            _sliderAnimator.Value,
+            _paintHoveredIndex,
+            _hoverAnimator.Value,
+            borderedCardStyle: true,
+            Focused && ShowFocusCues);
     }
 
     protected override void Dispose(bool disposing)
@@ -146,8 +108,8 @@ public class ThemeSegmentedControl : Control
         if (disposing)
         {
             ThemeManager.ThemeChanged -= OnGlobalThemeChanged;
-            _animTimer.Stop();
-            _animTimer.Dispose();
+            _sliderAnimator.Dispose();
+            _hoverAnimator.Dispose();
         }
         base.Dispose(disposing);
     }

@@ -1,4 +1,4 @@
-using System.Drawing.Drawing2D;
+﻿using System.Drawing.Drawing2D;
 using System.Drawing.Text;
 using ZSnaper.Helpers;
 using ZSnaper.Models;
@@ -52,8 +52,8 @@ public sealed class ModernDropdown : Control
             true);
         BackColor = Color.Transparent;
         Cursor = Cursors.Hand;
-        Font = new Font("Microsoft YaHei UI", 8f, FontStyle.Regular);
-        Size = new Size(112, 28);
+        Font = new Font("Microsoft YaHei UI", 9f, FontStyle.Regular);
+        Size = new Size(128, 32);
         TabStop = true;
         AccessibleRole = AccessibleRole.ComboBox;
         ThemeManager.ThemeChanged += OnThemeChanged;
@@ -96,6 +96,7 @@ public sealed class ModernDropdown : Control
         base.OnMouseDown(e);
         if (e.Button == MouseButtons.Left)
         {
+            Focus();
             _isPressed = true;
             Invalidate();
         }
@@ -116,6 +117,7 @@ public sealed class ModernDropdown : Control
         {
             ToggleDropDown();
             e.Handled = true;
+            e.SuppressKeyPress = true;
             return;
         }
 
@@ -142,39 +144,27 @@ public sealed class ModernDropdown : Control
         graphics.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
         ThemePalette palette = ThemeManager.Palette;
 
-        Rectangle bounds = new(0, 0, Width - 1, Height - 1);
-        using GraphicsPath path = GraphicsHelper.GetRoundedRectangle(bounds, 6);
-        Color fill = _isPressed
-            ? palette.NavItemHover
-            : _isHovered
-                ? Color.FromArgb(palette.Mode == ThemeMode.Dark ? 30 : 18, palette.TextPrimary)
-                : palette.InputBg;
-        using (var brush = new SolidBrush(fill))
+        Rectangle bounds = new(1, 1, Width - 3, Height - 3);
+        using GraphicsPath path = GraphicsHelper.GetRoundedRectangle(bounds, GraphicsHelper.Dip(this, 12));
+        using (var brush = new SolidBrush(palette.InputBg))
         {
             graphics.FillPath(brush, path);
         }
-
-        using (var borderPen = new Pen(palette.InputBorder, 1f))
+        if (_isHovered || _isPressed)
+        {
+            using var state = new SolidBrush(Color.FromArgb(_isPressed ? 20 : 10, palette.TextPrimary));
+            graphics.FillPath(state, path);
+        }
+        using (var borderPen = new Pen(Focused ? palette.AccentColor : palette.InputBorder, Focused ? 2f : 1f))
         {
             graphics.DrawPath(borderPen, path);
-        }
-
-        if (Focused)
-        {
-            Rectangle focusBounds = Rectangle.Inflate(bounds, -2, -2);
-            using GraphicsPath focusPath = GraphicsHelper.GetRoundedRectangle(focusBounds, 4);
-            using var focusPen = new Pen(Color.FromArgb(150, palette.AccentColor), 1f)
-            {
-                DashStyle = DashStyle.Dot
-            };
-            graphics.DrawPath(focusPen, focusPath);
         }
 
         TextRenderer.DrawText(
             graphics,
             SelectedItem ?? string.Empty,
             Font,
-            new Rectangle(10, 0, Math.Max(1, Width - 34), Height),
+            new Rectangle(GraphicsHelper.Dip(this, 10), 0, Math.Max(1, Width - GraphicsHelper.Dip(this, 34)), Height),
             palette.TextPrimary,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
 
@@ -184,7 +174,7 @@ public sealed class ModernDropdown : Control
             EndCap = System.Drawing.Drawing2D.LineCap.Round,
             LineJoin = LineJoin.Round
         };
-        float arrowX = Width - 17f;
+        float arrowX = Width - GraphicsHelper.Dip(this, 17);
         float arrowY = Height / 2f - 2f;
         graphics.DrawLine(arrowPen, arrowX - 3f, arrowY, arrowX, arrowY + 3f);
         graphics.DrawLine(arrowPen, arrowX, arrowY + 3f, arrowX + 3f, arrowY);
@@ -383,14 +373,14 @@ internal sealed class ModernDropdownList : Control
             bool selected = index == _selectedIndex;
             bool hovered = index == _hoveredIndex;
             Color rowColor = selected
-                ? palette.AccentColor
+                ? palette.PrimaryContainer
                 : hovered
                     ? palette.NavItemHover
                     : Color.Transparent;
 
             if (rowColor != Color.Transparent)
             {
-                using GraphicsPath rowPath = GraphicsHelper.GetRoundedRectangle(row, 5);
+                using GraphicsPath rowPath = GraphicsHelper.GetRoundedRectangle(row, 12);
                 using var rowBrush = new SolidBrush(rowColor);
                 graphics.FillPath(rowBrush, rowPath);
             }
@@ -400,7 +390,7 @@ internal sealed class ModernDropdownList : Control
                 _items[index],
                 Font,
                 new Rectangle(row.Left + 8, row.Top, Math.Max(1, row.Width - 16), row.Height),
-                selected ? palette.AccentForeground : palette.TextPrimary,
+                selected ? palette.OnPrimaryContainer : palette.TextPrimary,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
         }
 

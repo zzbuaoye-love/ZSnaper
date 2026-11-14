@@ -1,4 +1,4 @@
-using System.Drawing.Drawing2D;
+﻿using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using ZSnaper.Helpers;
 using ZSnaper.Services;
@@ -7,7 +7,7 @@ namespace ZSnaper.Controls;
 
 public sealed class ModernScrollPanel : Panel
 {
-    private const int ScrollBarReserve = 16;
+    private int ScrollBarReserve => Helpers.GraphicsHelper.Dip(this, 16);
     private const double SpringStrength = 290d;
     private const double SpringDamping = 34d;
 
@@ -106,10 +106,11 @@ public sealed class ModernScrollPanel : Panel
         LayoutViewport();
     }
 
-    protected override void OnMouseEnter(EventArgs e)
+
+    protected override void OnDpiChangedAfterParent(EventArgs e)
     {
-        base.OnMouseEnter(e);
-        Focus();
+        base.OnDpiChangedAfterParent(e);
+        FitContentHeight(Helpers.GraphicsHelper.Dip(this, 18));
     }
 
     protected override void OnMouseWheel(MouseEventArgs e)
@@ -430,21 +431,6 @@ public sealed class ModernScrollPanel : Panel
         }
 
         base.Dispose(disposing);
-    }
-
-    private sealed class BufferedPanel : Panel
-    {
-        public BufferedPanel()
-        {
-            DoubleBuffered = true;
-            SetStyle(
-                ControlStyles.SupportsTransparentBackColor |
-                ControlStyles.AllPaintingInWmPaint |
-                ControlStyles.UserPaint |
-                ControlStyles.OptimizedDoubleBuffer |
-                ControlStyles.ResizeRedraw,
-                true);
-        }
     }
 
     private sealed class ScrollSnapshotLayer : Control

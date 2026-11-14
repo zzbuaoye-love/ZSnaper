@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Diagnostics;
 using System.Reflection;
 using ZSnaper.Controls;
@@ -15,6 +15,46 @@ internal static partial class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.Contains("--isolated"))
+            Assert(ConfigService.TrySetStorageLocation(ConfigStorageLocation.ApplicationDirectory, out _),
+                "Could not isolate test configuration");
+
+        if (args.Contains("--experience-smoke"))
+        {
+            Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+            ConfigService.Current.Theme = args.Contains("--dark") ? ThemeMode.Dark : ThemeMode.Light;
+            ConfigService.Current.ToolbarPlacement = ToolbarPlacementMode.Center;
+            AppDiagnostics.Initialize(Path.Combine(AppContext.BaseDirectory, "diagnostics"));
+            TestSelectionKeyboardAndLifecycle();
+            TestHotkeyRecoveryAndDeduplication();
+            TestDesktopDuplication();
+            TestHdrToneMapping();
+            TestPrecisionAndAnnotationHistory();
+            TestRecentCaptureHistory();
+            Console.WriteLine("Capture experience regression tests passed.");
+            return 0;
+        }
+        if (args.Contains("--game-capture-smoke"))
+        {
+            TestForegroundGameCapture();
+            return 0;
+        }
+        if (args.Contains("--resource-smoke"))
+        {
+            TestCaptureResourceProfile();
+            return 0;
+        }
+        if (args.Contains("--experience-preview"))
+        {
+            ShowExperiencePreview(args);
+            return 0;
+        }
+        if (args.Contains("--ui-layout-smoke"))
+        {
+            TestUiLayouts();
+            Console.WriteLine("UI layout checks passed at default and minimum sizes in both themes.");
+            return 0;
+        }
         if (args.Contains("--selection-smoke"))
         {
             Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
@@ -36,6 +76,22 @@ internal static partial class Program
             ConfigService.Current.AnnotationToolBehavior = AnnotationToolBehavior.Sticky;
             TestArrowEditing();
             Console.WriteLine("Arrow editing tests passed.");
+            return 0;
+        }
+
+        if (args.Contains("--scroll-capture-smoke"))
+        {
+            Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+            ConfigService.Current.Theme = args.Contains("--dark") ? ThemeMode.Dark : ThemeMode.Light;
+            TestScrollCapture();
+            Console.WriteLine("Scroll capture tests passed.");
+            return 0;
+        }
+
+        if (args.Contains("--scroll-capture-browser-probe"))
+        {
+            Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+            TestBrowserScrollProbe();
             return 0;
         }
 
@@ -92,6 +148,7 @@ internal static partial class Program
         TestCaptureResourceGuards();
         TestSmartSelectionDragInvalidation();
         TestPinnedImageRendering();
+        TestScrollCapture();
         Console.WriteLine("Application stability tests passed.");
         return 0;
     }
@@ -431,6 +488,24 @@ internal static partial class Program
 
     private static void TestConfigurationNormalization()
     {
+        Assert(new AppConfig().AccentColorHex == "#1E293B", "New configurations must default to monochrome.");
+        Assert(JsonSerializer.Deserialize<AppConfig>("{}")!.AccentColorHex == "#1E293B",
+            "Configurations without an accent must default to monochrome.");
+        var customAccent = new AppConfig { AccentColorHex = "#8B5CF6" };
+        AppConfigSanitizer.Normalize(customAccent);
+        Assert(customAccent.AccentColorHex == "#8B5CF6", "An existing custom accent was overwritten.");
+        Color monochrome = ColorTranslator.FromHtml(AppConfig.DefaultAccentColorHex);
+        foreach (ThemeMode mode in new[] { ThemeMode.Light, ThemeMode.Dark })
+        {
+            ThemePalette palette = ThemePalette.Create(mode, monochrome, enableGlow: true);
+            Assert(palette.AccentColor.ToArgb() == (mode == ThemeMode.Light ? Color.Black : Color.White).ToArgb(),
+                "Monochrome accent did not follow the theme.");
+            Assert(palette.AccentForeground.ToArgb() == (mode == ThemeMode.Light ? Color.White : Color.Black).ToArgb(),
+                "Monochrome button text did not contrast with the accent.");
+            foreach (Color surface in new[] { palette.BackgroundColor, palette.SidebarBg, palette.CardBg,
+                palette.PrimaryContainer, palette.InputBg, palette.GlowColor1, palette.GlowColor2 })
+                Assert(surface.R == surface.G && surface.G == surface.B, "A monochrome surface has a color tint.");
+        }
         var config = new AppConfig
         {
             Theme = (ThemeMode)999,
@@ -468,7 +543,7 @@ internal static partial class Program
         Assert(config.AnimationMode == AnimationLevel.Balanced, "Invalid animation mode was not repaired.");
         Assert(config.ToolbarPlacement == ToolbarPlacementMode.Auto, "Invalid toolbar placement was not repaired.");
         Assert(config.ConfirmButtonBehavior == ConfirmButtonBehavior.Copy, "Invalid confirm behavior was not repaired.");
-        Assert(config.AccentColorHex == "#10B981", "Invalid accent color was not repaired.");
+        Assert(config.AccentColorHex == "#1E293B", "Invalid accent color was not repaired to monochrome.");
         Assert(double.IsFinite(config.ToolbarAutoHorizontalBias), "Non-finite toolbar bias survived normalization.");
         Assert(config.ToolbarAutoSampleCount == 10_000, "Toolbar sample count was not bounded.");
         Assert(config.AnnotationFontSize == 18f, "Non-finite annotation font size was not repaired.");
@@ -586,11 +661,11 @@ internal static partial class Program
 
         // ScrollCapture must be restored to its rightful place between Cursor and Ocr (index 7)
         Assert(
-            legacyConfig.CaptureToolbarOrder[7] == CaptureToolbarItem.ScrollCapture,
-            "ScrollCapture was not restored to index 7 in CaptureToolbarOrder.");
+            legacyConfig.CaptureToolbarOrder[8] == CaptureToolbarItem.ScrollCapture,
+            "ScrollCapture was not restored to index 8 in CaptureToolbarOrder.");
         Assert(
-            legacyConfig.CaptureToolbarOrder[6] == CaptureToolbarItem.Cursor &&
-            legacyConfig.CaptureToolbarOrder[8] == CaptureToolbarItem.Ocr,
+            legacyConfig.CaptureToolbarOrder[7] == CaptureToolbarItem.Cursor &&
+            legacyConfig.CaptureToolbarOrder[9] == CaptureToolbarItem.Ocr,
             "Cursor/Ocr neighborhood is incorrect in CaptureToolbarOrder.");
 
         // CaptureToolbarItems must also have ScrollCapture at index 7 and Confirm at the end
@@ -601,10 +676,10 @@ internal static partial class Program
             legacyConfig.CaptureToolbarItems[^2] == CaptureToolbarItem.Cancel,
             "Cancel was not immediately before Confirm in CaptureToolbarItems.");
         Assert(
-            legacyConfig.CaptureToolbarItems[7] == CaptureToolbarItem.ScrollCapture,
-            "ScrollCapture was not restored to index 7 in CaptureToolbarItems.");
+            legacyConfig.CaptureToolbarItems[8] == CaptureToolbarItem.ScrollCapture,
+            "ScrollCapture was not restored to index 8 in CaptureToolbarItems.");
 
-        // Layout was restored to Full because all 15 defaults are now present
+        // Layout was restored to Full because all 16 defaults are now present
         Assert(
             legacyConfig.CaptureToolbarLayout == CaptureToolbarLayout.Full,
             "CaptureToolbarLayout was not restored to Full.");

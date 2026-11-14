@@ -90,6 +90,25 @@ APP支持在应用内调整`主题`、`动画`、`强调色`、`快捷键`、`�
 
 选定网页、文档或列表的可滚动区域后，点击工具栏中的`长截图`进入专用捕获模式；可以在透明选区内缓慢手动滚动，也可以点击`自动滚动`，确认内容后再保存或完成。捕获过程中按 `Esc` 可立即停止。
 
+区域截图支持方向键逐像素移动选区，按住 `Shift` 每次移动 10 像素，按住 `Ctrl` 调整右侧或下侧边界；右键重新选择，再次右键或 `Esc` 退出。工具栏会保持在选区所在显示器内，结束或取消截图后释放冻结画面和马赛克缓存。
+
+检测到前台全屏应用时，优先通过 DXGI Desktop Duplication 捕获画面，并保持前台应用的激活状态；捕获设备仅在截图时创建，失败时回退到 GDI。显卡驱动、独占全屏和受保护画面的限制仍可能影响捕获；显示分辨率或 DPI 在截图期间变化时，会取消旧选区并提示重新截图。Direct3D 绑定使用 MIT 许可的 [Vortice.Windows](https://github.com/amerkoleci/Vortice.Windows)。
+
+快捷键使用系统注册及键盘 Hook 备用路径，并在解锁或休眠恢复后重新建立监听；普通绑定的 Hook 不拦截按键，强制绑定保留拦截行为。数字、小键盘和符号键使用稳定键名保存，并兼容旧版本文本格式。
+
+### 体验回归检查
+
+```powershell
+dotnet run --project installer/tests/Stability/ZSnaper.Stability.csproj -c Release -- --isolated --experience-smoke
+dotnet run --project installer/tests/Stability/ZSnaper.Stability.csproj -c Release -- --isolated --selection-smoke
+dotnet run --project installer/tests/Stability/ZSnaper.Stability.csproj -c Release -- --isolated --selection-smoke --dark
+dotnet run --project installer/tests/Stability/ZSnaper.Stability.csproj -c Release -- --isolated --ui-layout-smoke
+```
+
+`--isolated` 将测试配置写入测试程序输出目录，不改写用户配置。`--experience-smoke` 会实际检查当前桌面的 GDI / DXGI 捕获，需要可交互桌面；它不代表真实独占全屏游戏的兼容性验证。
+
+主窗口参照 [Material Design 3](https://m3.material.io/) 的颜色角色、导航、字体与形状规范，使用窄幅导航栏、淡色调截图入口、圆角按钮、标签栏和分组设置。默认采用黑白配色：浅色强调色为黑色，深色为白色，背景与卡片使用中性灰；已有自选强调色继续保留，也可在设置中选择“黑白”。实现沿用 WinForms 控件、Lucide 矢量图标和缓存的 Skia 背景层，没有额外引入 UI 框架或持续运行的背景动画。`--ui-layout-smoke` 检查六个页面在默认与最小窗口尺寸、浅色与深色主题下的控件边界和重叠，以及圆角边界和开关键盘操作，并在测试输出目录的 `ui-preview` 中保存预览图。
+
 ## 隐私相关
 
 本项目的`全部`截图、图像预处理与`离线`的 OCR 识别`均在本地执行`<br>

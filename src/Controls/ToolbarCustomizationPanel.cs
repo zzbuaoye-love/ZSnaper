@@ -1,4 +1,4 @@
-using System.Drawing.Drawing2D;
+﻿using System.Drawing.Drawing2D;
 using System.Drawing.Text;
 using ZSnaper.Helpers;
 using ZSnaper.Models;
@@ -728,6 +728,7 @@ public sealed class ToolbarCustomizationPanel : Control
         CaptureToolbarItem.Mosaic => "马赛克",
         CaptureToolbarItem.Style => "样式",
         CaptureToolbarItem.Undo => "撤销",
+        CaptureToolbarItem.Redo => "重做",
         CaptureToolbarItem.Cursor => "指针",
         CaptureToolbarItem.ScrollCapture => "长截图",
         CaptureToolbarItem.Ocr => "OCR",
@@ -748,6 +749,7 @@ public sealed class ToolbarCustomizationPanel : Control
         CaptureToolbarItem.Mosaic => LucideIcon.Grid3X3,
         CaptureToolbarItem.Style => LucideIcon.Palette,
         CaptureToolbarItem.Undo => LucideIcon.Undo2,
+        CaptureToolbarItem.Redo => LucideIcon.Redo2,
         CaptureToolbarItem.Cursor => LucideIcon.MousePointer2,
         CaptureToolbarItem.ScrollCapture => LucideIcon.GalleryVerticalEnd,
         CaptureToolbarItem.Ocr => LucideIcon.FileText,

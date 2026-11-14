@@ -1,4 +1,4 @@
-namespace ZSnaper.Models;
+﻿namespace ZSnaper.Models;
 
 public enum LucideIcon
 {
@@ -33,5 +33,6 @@ public enum LucideIcon
     Search,
     X,
     ChevronDown,
-    ChevronUp
+    ChevronUp,
+    Redo2
 }

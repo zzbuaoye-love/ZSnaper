@@ -13,6 +13,10 @@ that the plugin needs at runtime instead of resolving them from that property.
 The page can enable, disable, and uninstall a plugin. Enabled plugins are
 reloaded when ZSnaper starts. If initialization fails, the plugin is disabled
 and the error is written to `%LOCALAPPDATA%\ZSnaper\Logs`.
+Use **刷新列表** to rescan installed plugins and update their displayed state.
+The **API 开发文档** button opens the
+[Plugin API reference](https://github.com/zzbuaoye-love/ZSnaper/wiki/Plugin-API)
+in the default browser.
 
 ## `.zsp` package shape
 

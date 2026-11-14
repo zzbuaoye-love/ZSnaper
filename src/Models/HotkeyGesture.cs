@@ -56,7 +56,7 @@ public readonly record struct HotkeyGesture(Keys KeyCode, Keys Modifiers)
 
     public string DisplayText => string.Join(" + ", GetParts());
 
-    public string ConfigText => string.Join("+", GetParts());
+    public string ConfigText => string.Join("+", GetParts(display: false));
 
     public static HotkeyGesture FromKeyEvent(KeyEventArgs e) =>
         new(e.KeyCode, e.Modifiers & SupportedModifiers);
@@ -96,7 +96,7 @@ public readonly record struct HotkeyGesture(Keys KeyCode, Keys Modifiers)
                 continue;
             }
 
-            if (!Enum.TryParse(part, ignoreCase: true, out Keys parsedKey))
+            if (!TryParseKey(part, out Keys parsedKey))
             {
                 return false;
             }
@@ -121,12 +121,35 @@ public readonly record struct HotkeyGesture(Keys KeyCode, Keys Modifiers)
 
     private static bool IsStandaloneKey(Keys keyCode) => keyCode == Keys.PrintScreen;
 
-    private IEnumerable<string> GetParts()
+    private static bool TryParseKey(string part, out Keys key)
+    {
+        // Accept text written by older versions, while saving stable enum names.
+        if (part.Length == 1 && part[0] is >= '0' and <= '9')
+        {
+            key = (Keys)((int)Keys.D0 + part[0] - '0');
+            return true;
+        }
+        if (part.Length == 5 && part.StartsWith("Num ", StringComparison.OrdinalIgnoreCase) && part[4] is >= '0' and <= '9')
+        {
+            key = (Keys)((int)Keys.NumPad0 + part[4] - '0');
+            return true;
+        }
+        key = part switch
+        {
+            "," => Keys.Oemcomma, "." => Keys.OemPeriod, "/" => Keys.OemQuestion,
+            ";" => Keys.OemSemicolon, "'" => Keys.OemQuotes, "[" => Keys.OemOpenBrackets,
+            "]" => Keys.OemCloseBrackets, "\\" => Keys.OemPipe, "-" => Keys.OemMinus, "=" => Keys.Oemplus,
+            _ => Keys.None
+        };
+        return key != Keys.None || Enum.TryParse(part, ignoreCase: true, out key);
+    }
+
+    private IEnumerable<string> GetParts(bool display = true)
     {
         if (Modifiers.HasFlag(Keys.Control)) yield return "Ctrl";
         if (Modifiers.HasFlag(Keys.Alt)) yield return "Alt";
         if (Modifiers.HasFlag(Keys.Shift)) yield return "Shift";
-        if (KeyCode != Keys.None) yield return GetKeyName(KeyCode);
+        if (KeyCode != Keys.None) yield return display ? GetKeyName(KeyCode) : KeyCode.ToString();
     }
 
     private static string GetKeyName(Keys keyCode)

@@ -1,5 +1,6 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using ZSnaper.Controls;
+using ZSnaper.Helpers;
 using ZSnaper.Models;
 using ZSnaper.Plugins;
 using ZSnaper.Services;
@@ -29,13 +30,13 @@ public partial class MainForm
         _pluginPage = CreateBasePage();
         Label heading = new()
         {
-            Text = "插件管理", Font = new Font("Microsoft YaHei UI", 16f, FontStyle.Bold),
-            Location = new Point(0, 2), Size = new Size(250, 34)
+            Text = "插件管理", Font = new Font("Microsoft YaHei UI", 18f, FontStyle.Regular),
+            Location = new Point(0, 2), Size = new Size(250, 42)
         };
         Label description = new()
         {
-            Text = "安装 .zsp 插件，并管理启用状态与截图动作。",
-            Font = new Font("Microsoft YaHei UI", 9f), Location = new Point(1, 40),
+            Text = "安装 .zsp 插件，并管理启用状态与截图动作",
+            Font = new Font("Microsoft YaHei UI", 9f), Location = new Point(1, 46),
             Size = new Size(500, 23), AutoEllipsis = true,
             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
         };
@@ -75,9 +76,40 @@ public partial class MainForm
                 UseShellExecute = true
             });
         };
+        ModernButton refresh = new()
+        {
+            Text = "刷新列表", Icon = LucideIcon.RotateCcw, IsPrimary = false,
+            Size = new Size(125, 32), Location = new Point(287, 72)
+        };
+        refresh.Click += (_, _) =>
+        {
+            refresh.Enabled = false;
+            try { RefreshPluginPage(showStatus: true); }
+            finally { refresh.Enabled = true; }
+        };
+        ModernButton apiDocs = new()
+        {
+            Text = "插件开发文档", Icon = LucideIcon.FileText, IsPrimary = false,
+            Size = new Size(155, 32), Location = new Point(418, 72)
+        };
+        apiDocs.Click += (_, _) =>
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "https://github.com/zzbuaoye-love/ZSnaper/wiki/",
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception exception) when (exception is System.ComponentModel.Win32Exception or InvalidOperationException)
+            {
+                ShowPluginStatus(new(false, "无法打开插件开发文档：" + exception.Message));
+            }
+        };
         _pluginStatus = new Label
         {
-            Text = "插件在启用后运行，请只启用可信来源的插件。",
+            Text = "插件在启用后运行，请只启用可信来源的插件",
             Font = new Font("Microsoft YaHei UI", 8.5f),
             Location = new Point(0, 111), Size = new Size(500, 23),
             AutoEllipsis = true, Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
@@ -99,17 +131,17 @@ public partial class MainForm
             FlowDirection = FlowDirection.TopDown, BackColor = Color.Transparent,
             Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right
         };
-        _pluginPage.Controls.AddRange([heading, description, install, folder,
+        _pluginPage.Controls.AddRange([heading, description, install, folder, refresh, apiDocs,
             _pluginStatus, _pluginActionHeading, _pluginActions, _pluginList]);
 
         void Layout()
         {
-            int width = Math.Max(260, _pluginPage.ClientSize.Width - 2);
+            int width = Math.Max(GraphicsHelper.Dip(_pluginPage, 260), _pluginPage.ClientSize.Width - GraphicsHelper.Dip(_pluginPage, 2));
             description.Width = _pluginStatus.Width = width;
             bool hasActions = _pluginActions.Visible;
             _pluginActions.Width = width;
-            _pluginList.SetBounds(0, hasActions ? 208 : 144, width,
-                Math.Max(80, _pluginPage.ClientSize.Height - (hasActions ? 208 : 144)));
+            _pluginList.SetBounds(0, GraphicsHelper.Dip(_pluginPage, hasActions ? 208 : 144), width,
+                Math.Max(GraphicsHelper.Dip(_pluginPage, 80), _pluginPage.ClientSize.Height - (GraphicsHelper.Dip(_pluginPage, hasActions ? 208 : 144))));
             foreach (Control row in _pluginList.Controls) row.Width = Math.Max(240, width - 20);
         }
 
@@ -121,6 +153,7 @@ public partial class MainForm
             ThemePalette palette = ThemeManager.Palette;
             heading.ForeColor = _pluginActionHeading.ForeColor = palette.TextPrimary;
             description.ForeColor = _pluginStatus.ForeColor = palette.TextSecondary;
+            RefreshPluginPage();
             _pluginPage.Invalidate(true);
         }
         ApplyTheme();
@@ -128,12 +161,14 @@ public partial class MainForm
         return _pluginPage;
     }
 
-    private void RefreshPluginPage()
+    private void RefreshPluginPage() => RefreshPluginPage(showStatus: false);
+
+    private void RefreshPluginPage(bool showStatus)
     {
-        if (_pluginManager is null || _pluginPage.IsDisposed) return;
+        if (_pluginPage.IsDisposed) return;
         if (_pluginPage.InvokeRequired)
         {
-            if (_pluginPage.IsHandleCreated) _pluginPage.BeginInvoke((Action)RefreshPluginPage);
+            if (_pluginPage.IsHandleCreated) _pluginPage.BeginInvoke((Action)(() => RefreshPluginPage(showStatus)));
             return;
         }
 
@@ -141,31 +176,51 @@ public partial class MainForm
         foreach (Control old in _pluginList.Controls.Cast<Control>().ToArray()) old.Dispose();
         _pluginList.Controls.Clear();
         IReadOnlyList<InstalledPlugin> plugins;
-        try { plugins = _pluginManager.List(); }
+        bool loaded = true;
+        try { plugins = _pluginManager?.List() ?? []; }
         catch (Exception exception)
         {
+            loaded = false;
             ShowPluginStatus(new(false, "无法读取插件目录：" + exception.Message));
             plugins = [];
         }
         if (plugins.Count == 0)
         {
-            _pluginList.Controls.Add(new Label
+            int emptyWidth = Math.Max(240, _pluginList.ClientSize.Width - 20);
+            var emptyCard = new ModernCard
             {
-                Text = "尚未安装插件。可导入 .zsp 插件包。",
-                Font = new Font("Microsoft YaHei UI", 9f),
-                ForeColor = ThemeManager.Palette.TextSecondary,
-                Width = Math.Max(240, _pluginList.ClientSize.Width - 20), Height = 42,
-                TextAlign = ContentAlignment.MiddleLeft
+                Size = new Size(emptyWidth, 150), Margin = new Padding(0)
+            };
+            var icon = new Panel { Location = new Point(20, 22), Size = new Size(32, 32) };
+            icon.Paint += (_, e) => LucideRenderer.Draw(e.Graphics, LucideIcon.Grid3X3,
+                2, 2, 28, ThemeManager.Palette.TextMuted);
+            emptyCard.Controls.Add(icon);
+            emptyCard.Controls.Add(new Label
+            {
+                Text = "扩展你的截图工作流",
+                Font = new Font("Microsoft YaHei UI", 11f, FontStyle.Bold),
+                ForeColor = ThemeManager.Palette.TextPrimary,
+                Location = new Point(20, 67), Size = new Size(emptyWidth - 40, 26),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
             });
+            emptyCard.Controls.Add(new Label
+            {
+                Text = "还没有安装插件，点击上方按钮导入 .zsp 插件包",
+                Font = new Font("Microsoft YaHei UI", 8.5f),
+                ForeColor = ThemeManager.Palette.TextSecondary,
+                Location = new Point(20, 102), Size = new Size(emptyWidth - 40, 24),
+                AutoEllipsis = true, Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+            });
+            _pluginList.Controls.Add(emptyCard);
         }
         foreach (InstalledPlugin plugin in plugins) AddPluginRow(plugin);
         _pluginList.ResumeLayout();
 
         foreach (Control old in _pluginActions.Controls.Cast<Control>().ToArray()) old.Dispose();
         _pluginActions.Controls.Clear();
-        if (_pluginManager.HasCapture)
+        if (_pluginManager is { HasCapture: true } manager)
         {
-            foreach (PluginActionInfo action in _pluginManager.GetActions())
+            foreach (PluginActionInfo action in manager.GetActions())
             {
                 ModernButton button = new()
                 {
@@ -173,17 +228,23 @@ public partial class MainForm
                     Size = new Size(145, 30), Margin = new Padding(0, 0, 7, 0)
                 };
                 button.Click += async (_, _) =>
-                    ShowPluginStatus(await _pluginManager.RunActionAsync(action.PluginId, action.Item.Id));
+                    ShowPluginStatus(await manager.RunActionAsync(action.PluginId, action.Item.Id));
                 _pluginActions.Controls.Add(button);
             }
         }
         bool visible = _pluginActions.Controls.Count > 0;
         _pluginActions.Visible = _pluginActionHeading.Visible = visible;
         _pluginPage.PerformLayout();
-        int top = visible ? 208 : 144;
-        int width = Math.Max(260, _pluginPage.ClientSize.Width - 2);
+        int top = GraphicsHelper.Dip(_pluginPage, visible ? 208 : 144);
+        int width = Math.Max(GraphicsHelper.Dip(_pluginPage, 260), _pluginPage.ClientSize.Width - GraphicsHelper.Dip(_pluginPage, 2));
         _pluginActions.Width = width;
-        _pluginList.SetBounds(0, top, width, Math.Max(80, _pluginPage.ClientSize.Height - top));
+        _pluginList.SetBounds(0, top, width, Math.Max(GraphicsHelper.Dip(_pluginPage, 80), _pluginPage.ClientSize.Height - top));
+        if (showStatus && loaded)
+        {
+            ShowPluginStatus(_pluginManager is null
+                ? new(false, "插件管理器尚未就绪")
+                : new(true, $"列表已刷新，共 {plugins.Count} 个插件"));
+        }
     }
 
     private void AddPluginRow(InstalledPlugin plugin)
@@ -232,7 +293,7 @@ public partial class MainForm
             if (_pluginManager is null) return;
             if (!_pluginManager.IsRunning(plugin.Manifest.Id) &&
                 MessageBox.Show(this,
-                    "插件代码会在 ZSnaper 进程内运行，拥有与应用相同的系统权限。仅启用可信来源的插件。\n\n继续启用？",
+                    "插件代码会在 ZSnaper 进程内运行，拥有与应用相同的系统权限\n仅启用可信来源的插件\n\n继续启用？",
                     "启用插件", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
             toggle.Enabled = false;
             PluginOperationResult result = _pluginManager.IsRunning(plugin.Manifest.Id)

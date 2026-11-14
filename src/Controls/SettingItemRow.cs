@@ -1,5 +1,6 @@
-using System.Drawing.Drawing2D;
+﻿using System.Drawing.Drawing2D;
 using ZSnaper.Models;
+using ZSnaper.Helpers;
 using ZSnaper.Services;
 
 namespace ZSnaper.Controls;
@@ -11,6 +12,8 @@ public class SettingItemRow : Control
     private bool _showDivider = true;
     private Control? _actionControl;
     private bool _isHovered;
+    private readonly Font _titleFont = new("Microsoft YaHei UI", 10f);
+    private readonly Font _descriptionFont = new("Microsoft YaHei UI", 8.5f);
 
     public string Title
     {
@@ -18,6 +21,7 @@ public class SettingItemRow : Control
         set
         {
             _title = value;
+            if (_actionControl is not null) _actionControl.AccessibleName = value;
             Invalidate();
         }
     }
@@ -28,6 +32,7 @@ public class SettingItemRow : Control
         set
         {
             _description = value;
+            if (_actionControl is not null) _actionControl.AccessibleDescription = value;
             Invalidate();
         }
     }
@@ -49,11 +54,18 @@ public class SettingItemRow : Control
         {
             if (_actionControl != value)
             {
-                if (_actionControl != null) Controls.Remove(_actionControl);
+                if (_actionControl != null)
+                {
+                    _actionControl.SizeChanged -= ActionSizeChanged;
+                    Controls.Remove(_actionControl);
+                }
                 _actionControl = value;
                 if (_actionControl != null)
                 {
                     Controls.Add(_actionControl);
+                    _actionControl.SizeChanged += ActionSizeChanged;
+                    if (string.IsNullOrWhiteSpace(_actionControl.AccessibleName)) _actionControl.AccessibleName = _title;
+                    _actionControl.AccessibleDescription = _description;
                     PositionActionControl();
                 }
             }
@@ -89,11 +101,19 @@ public class SettingItemRow : Control
         Invalidate();
     }
 
+    private void ActionSizeChanged(object? sender, EventArgs e) => PositionActionControl();
+
+    protected override void OnDpiChangedAfterParent(EventArgs e)
+    {
+        base.OnDpiChangedAfterParent(e);
+        PositionActionControl();
+    }
+
     private void PositionActionControl()
     {
         if (_actionControl != null)
         {
-            _actionControl.Location = new Point(Width - _actionControl.Width - 16, (Height - _actionControl.Height) / 2);
+            _actionControl.Location = new Point(Width - _actionControl.Width - GraphicsHelper.Dip(this, 16), (Height - _actionControl.Height) / 2);
             _actionControl.Anchor = AnchorStyles.Top | AnchorStyles.Right;
         }
     }
@@ -106,6 +126,7 @@ public class SettingItemRow : Control
         g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
 
         var palette = ThemeManager.Palette;
+        int D(int value) => GraphicsHelper.Dip(this, value);
 
         if (_isHovered)
         {
@@ -116,30 +137,39 @@ public class SettingItemRow : Control
             g.FillRectangle(hoverBrush, 1, 1, Math.Max(0, Width - 2), Math.Max(0, Height - 2));
         }
 
+        int textWidth = Math.Max(0, (_actionControl?.Left ?? Width - D(16)) - D(32));
+        const TextFormatFlags textFlags = TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding |
+            TextFormatFlags.SingleLine | TextFormatFlags.VerticalCenter;
         if (string.IsNullOrEmpty(_description))
         {
             // 单行标题居中
-            using var titleFont = new Font("Microsoft YaHei UI", 9.2f, FontStyle.Regular);
-            using var titleBrush = new SolidBrush(palette.TextPrimary);
-            g.DrawString(_title, titleFont, titleBrush, 16, (Height - 18) / 2);
+            TextRenderer.DrawText(g, _title, _titleFont, new Rectangle(D(16), 0, textWidth, Height),
+                palette.TextPrimary, textFlags);
         }
         else
         {
             // 主标题 + 副标题
-            using var titleFont = new Font("Microsoft YaHei UI", 9.2f, FontStyle.Regular);
-            using var titleBrush = new SolidBrush(palette.TextPrimary);
-            g.DrawString(_title, titleFont, titleBrush, 16, 7);
-
-            using var descFont = new Font("Microsoft YaHei UI", 8f, FontStyle.Regular);
-            using var descBrush = new SolidBrush(palette.TextMuted);
-            g.DrawString(_description, descFont, descBrush, 16, 28);
+            TextRenderer.DrawText(g, _title, _titleFont, new Rectangle(D(16), D(6), textWidth, D(20)),
+                palette.TextPrimary, textFlags);
+            TextRenderer.DrawText(g, _description, _descriptionFont, new Rectangle(D(16), D(28), textWidth, D(18)),
+                palette.TextMuted, textFlags);
         }
 
         // 底部分割线
         if (_showDivider)
         {
             using var pen = new Pen(palette.CardBorder, 1f);
-            g.DrawLine(pen, 16, Height - 1, Width - 16, Height - 1);
+            g.DrawLine(pen, D(16), Height - 1, Width - D(16), Height - 1);
         }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _titleFont.Dispose();
+            _descriptionFont.Dispose();
+        }
+        base.Dispose(disposing);
     }
 }

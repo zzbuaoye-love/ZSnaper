@@ -24,7 +24,10 @@ internal static class AppConfigSanitizer
         if (!Enum.IsDefined(config.TrayLeftClickAction)) config.TrayLeftClickAction = TrayClickAction.OpenMainWindow;
         if (!Enum.IsDefined(config.TrayMiddleClickAction)) config.TrayMiddleClickAction = TrayClickAction.Capture;
 
-        config.AccentColorHex = NormalizeColor(config.AccentColorHex, "#10B981");
+        config.AccentColorHex = NormalizeColor(config.AccentColorHex, AppConfig.DefaultAccentColorHex);
+        config.RecentCaptureFiles = (config.RecentCaptureFiles ?? [])
+            .Where(path => !string.IsNullOrWhiteSpace(path) && Path.IsPathFullyQualified(path))
+            .Distinct(StringComparer.OrdinalIgnoreCase).Take(8).ToList();
         config.AnnotationColorHex = NormalizeColor(config.AnnotationColorHex, "#FF3B30");
         config.TrayIconLightColorHex = NormalizeColor(config.TrayIconLightColorHex, "#383C40");
         config.TrayIconDarkColorHex = NormalizeColor(config.TrayIconDarkColorHex, "#FFFFFF");
@@ -133,7 +136,11 @@ internal static class AppConfigSanitizer
             .ToList();
         foreach (CaptureToolbarItem item in defaults)
         {
-            if (!config.CaptureToolbarOrder.Contains(item)) config.CaptureToolbarOrder.Add(item);
+            if (config.CaptureToolbarOrder.Contains(item)) continue;
+            int undoIndex = config.CaptureToolbarOrder.IndexOf(CaptureToolbarItem.Undo);
+            if (item == CaptureToolbarItem.Redo && undoIndex >= 0)
+                config.CaptureToolbarOrder.Insert(undoIndex + 1, item);
+            else config.CaptureToolbarOrder.Add(item);
         }
 
         // 1. 修复由于历史版本 enum 插入 Pin 导致的 13(Confirm) 与 14(ScrollCapture) 错位：
@@ -185,7 +192,7 @@ internal static class AppConfigSanitizer
             .ToHashSet();
 
         // 若因错位异常导致意外被标记为 Custom，但实际上选中的是全部默认项，则重置为标准的 Full 布局
-        if (selected.SetEquals(defaults))
+        if (selected.SetEquals(defaults) || selected.SetEquals(defaults.Where(item => item != CaptureToolbarItem.Redo)))
         {
             config.CaptureToolbarLayout = CaptureToolbarLayout.Full;
             config.CaptureToolbarItems = CaptureToolbarDefaults.CreateLayout(CaptureToolbarLayout.Full);

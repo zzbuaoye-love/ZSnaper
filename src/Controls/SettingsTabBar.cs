@@ -1,4 +1,5 @@
-using System.Drawing.Drawing2D;
+﻿using System.Drawing.Drawing2D;
+using ZSnaper.Helpers;
 using ZSnaper.Models;
 using ZSnaper.Services;
 
@@ -7,8 +8,11 @@ namespace ZSnaper.Controls;
 public sealed class SettingsTabBar : Control
 {
     private static readonly string[] TabLabels = ["外观", "截图", "OCR", "工具栏", "系统"];
+    private readonly SmoothValueAnimator _indicatorAnimator;
+    private readonly SmoothValueAnimator _hoverAnimator;
     private int _selectedIndex;
     private int _hoveredIndex = -1;
+    private int _paintHoveredIndex = -1;
 
     public int SelectedIndex
     {
@@ -31,11 +35,22 @@ public sealed class SettingsTabBar : Control
             true);
         BackColor = Color.Transparent;
         Cursor = Cursors.Hand;
-        Font = new Font("Microsoft YaHei UI", 8.5f, FontStyle.Regular);
+        Font = new Font("Microsoft YaHei UI", 9.5f, FontStyle.Regular);
         Size = new Size(420, 34);
         TabStop = true;
+        AccessibleRole = AccessibleRole.PageTabList;
+        AccessibleName = "设置分类";
+
+        _indicatorAnimator = new SmoothValueAnimator(this, 0f, Invalidate, defaultDurationMs: 185);
+        _hoverAnimator = new SmoothValueAnimator(this, 0f, Invalidate, defaultDurationMs: 110);
+
         ThemeManager.ThemeChanged += HandleThemeChanged;
     }
+
+    internal void CompleteAnimations() => _indicatorAnimator.Complete();
+
+    protected override AccessibleObject CreateAccessibilityInstance() => new SegmentedControlAccessibility(
+        this, TabLabels, () => _selectedIndex, index => SelectedIndex = index, AccessibleRole.PageTab);
 
     protected override void OnMouseMove(MouseEventArgs e)
     {
@@ -44,6 +59,8 @@ public sealed class SettingsTabBar : Control
         if (_hoveredIndex != hovered)
         {
             _hoveredIndex = hovered;
+            if (hovered >= 0) _paintHoveredIndex = hovered;
+            _hoverAnimator.SetTarget(hovered >= 0 ? 1f : 0f);
             Invalidate();
         }
     }
@@ -54,7 +71,7 @@ public sealed class SettingsTabBar : Control
         if (_hoveredIndex != -1)
         {
             _hoveredIndex = -1;
-            Invalidate();
+            _hoverAnimator.SetTarget(0f);
         }
     }
 
@@ -64,7 +81,8 @@ public sealed class SettingsTabBar : Control
         if (e.Button == MouseButtons.Left)
         {
             Focus();
-            SetSelectedIndex(HitTest(e.Location), raiseChanged: true);
+            int hit = HitTest(e.Location);
+            if (hit >= 0) SetSelectedIndex(hit, raiseChanged: true);
         }
     }
 
@@ -85,7 +103,7 @@ public sealed class SettingsTabBar : Control
 
         if (next == _selectedIndex) return;
         SetSelectedIndex(next, raiseChanged: true);
-        e.Handled = true;
+        e.Handled = e.SuppressKeyPress = true;
     }
 
     protected override void OnPaint(PaintEventArgs e)
@@ -98,48 +116,64 @@ public sealed class SettingsTabBar : Control
         graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
         ThemePalette palette = ThemeManager.Palette;
 
-        Rectangle outer = new(0, 0, Width - 1, Height - 1);
-        using (GraphicsPath outerPath = Helpers.GraphicsHelper.GetRoundedRectangle(outer, 9))
-        using (var outerBrush = new SolidBrush(palette.Mode == ThemeMode.Dark
-                   ? Color.FromArgb(0, 255, 255, 255)
-                   : Color.FromArgb(0, 0, 0, 0)))
-        {
-            graphics.FillPath(outerBrush, outerPath);
-        }
+        using var divider = new Pen(palette.CardBorder);
+        graphics.DrawLine(divider, 0, Height - 1, Width, Height - 1);
 
-        int gap = 4;
+        int gap = GraphicsHelper.Dip(this, 4);
         int segmentWidth = Math.Max(1, (Width - gap * (TabLabels.Length - 1)) / TabLabels.Length);
+        float sliderPos = Math.Clamp(_indicatorAnimator.Value, 0f, TabLabels.Length - 1);
+        float hoverOpacity = Math.Clamp(_hoverAnimator.Value, 0f, 1f);
+
         for (int index = 0; index < TabLabels.Length; index++)
         {
-            int x = index * (segmentWidth + gap);
-            if (index == TabLabels.Length - 1) x = Width - segmentWidth;
-            Rectangle bounds = new(x, 3, segmentWidth, Math.Max(1, Height - 7));
-
-            bool selected = index == _selectedIndex;
-            bool hovered = index == _hoveredIndex;
-            if (selected || hovered)
+            Rectangle bounds = GetTabBounds(index, gap, segmentWidth);
+            if (_paintHoveredIndex == index && hoverOpacity > 0.01f)
             {
-                Color fill = hovered ? palette.NavItemHover : Color.Transparent;
-                using GraphicsPath tabPath = Helpers.GraphicsHelper.GetRoundedRectangle(bounds, 7);
+                Color hoverBase = palette.NavItemHover;
+                Color fill = Color.FromArgb((int)Math.Round(hoverBase.A * hoverOpacity), hoverBase);
+                using GraphicsPath tabPath = GraphicsHelper.GetRoundedRectangle(new RectangleF(bounds.X, bounds.Y, bounds.Width, bounds.Height), 8f);
                 using var tabBrush = new SolidBrush(fill);
                 graphics.FillPath(tabBrush, tabPath);
             }
 
+            float activeWeight = Math.Clamp(1f - Math.Abs(sliderPos - index), 0f, 1f);
+            Color labelColor = GraphicsHelper.BlendColor(palette.TextSecondary, palette.AccentColor, activeWeight);
             TextRenderer.DrawText(
                 graphics,
                 TabLabels[index],
                 Font,
                 bounds,
-                selected ? palette.TextPrimary : palette.TextSecondary,
+                labelColor,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
-            if (selected)
-            {
-                using var indicator = new SolidBrush(palette.AccentColor);
-                using GraphicsPath indicatorPath = Helpers.GraphicsHelper.GetRoundedRectangle(
-                    new Rectangle(bounds.Left + bounds.Width / 2 - 10, Height - 4, 20, 3), 1);
-                graphics.FillPath(indicator, indicatorPath);
-            }
         }
+
+        // Smooth subpixel sliding bottom pill indicator
+        float indicatorLeft = InterpolateTabLeft(sliderPos, gap, segmentWidth) + GraphicsHelper.Dip(this, 14);
+        float indicatorWidth = Math.Max(8f, segmentWidth - GraphicsHelper.Dip(this, 28));
+        float indicatorHeight = Math.Max(2.5f, GraphicsHelper.Dip(this, 3));
+        var indicatorRect = new RectangleF(indicatorLeft, Height - indicatorHeight - 1.5f, indicatorWidth, indicatorHeight);
+        using (var indicatorBrush = new SolidBrush(palette.AccentColor))
+        using (GraphicsPath indicatorPath = GraphicsHelper.GetRoundedRectangle(indicatorRect, indicatorHeight / 2f))
+        {
+            graphics.FillPath(indicatorBrush, indicatorPath);
+        }
+    }
+
+    private Rectangle GetTabBounds(int index, int gap, int segmentWidth)
+    {
+        int x = index * (segmentWidth + gap);
+        if (index == TabLabels.Length - 1) x = Width - segmentWidth;
+        return new Rectangle(x, 3, segmentWidth, Math.Max(1, Height - 8));
+    }
+
+    private float InterpolateTabLeft(float sliderPos, int gap, int segmentWidth)
+    {
+        int low = Math.Clamp((int)MathF.Floor(sliderPos), 0, TabLabels.Length - 1);
+        int high = Math.Clamp((int)MathF.Ceiling(sliderPos), 0, TabLabels.Length - 1);
+        float t = sliderPos - low;
+        int leftA = GetTabBounds(low, gap, segmentWidth).Left;
+        int leftB = GetTabBounds(high, gap, segmentWidth).Left;
+        return leftA + (leftB - leftA) * t;
     }
 
     protected override void Dispose(bool disposing)
@@ -147,6 +181,8 @@ public sealed class SettingsTabBar : Control
         if (disposing)
         {
             ThemeManager.ThemeChanged -= HandleThemeChanged;
+            _indicatorAnimator.Dispose();
+            _hoverAnimator.Dispose();
         }
 
         base.Dispose(disposing);
@@ -158,6 +194,8 @@ public sealed class SettingsTabBar : Control
         if (_selectedIndex == normalized) return;
 
         _selectedIndex = normalized;
+        _indicatorAnimator.SetTarget(normalized);
+        AccessibilityNotifyClients(AccessibleEvents.Selection, normalized + 1);
         Invalidate();
         if (raiseChanged) SelectedIndexChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -166,13 +204,11 @@ public sealed class SettingsTabBar : Control
     {
         if (point.Y < 0 || point.Y >= Height) return -1;
 
-        int gap = 4;
+        int gap = GraphicsHelper.Dip(this, 4);
         int segmentWidth = Math.Max(1, (Width - gap * (TabLabels.Length - 1)) / TabLabels.Length);
         for (int index = 0; index < TabLabels.Length; index++)
         {
-            int x = index * (segmentWidth + gap);
-            if (index == TabLabels.Length - 1) x = Width - segmentWidth;
-            if (new Rectangle(x, 3, segmentWidth, Math.Max(1, Height - 7)).Contains(point)) return index;
+            if (GetTabBounds(index, gap, segmentWidth).Contains(point)) return index;
         }
 
         return -1;

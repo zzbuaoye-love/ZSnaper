@@ -1,5 +1,3 @@
-using System.Diagnostics;
-using System.Drawing.Drawing2D;
 using ZSnaper.Helpers;
 using ZSnaper.Models;
 using ZSnaper.Services;
@@ -11,154 +9,125 @@ namespace ZSnaper.Controls;
 /// </summary>
 public class ChannelSegmentedControl : Control
 {
-    private float _sliderIndex = 1f; // 0 = 正式版(Release), 1 = 测试版(Beta)
-    private float _startPos = 1f;
-    private float _targetPos = 1f;
-    private readonly System.Windows.Forms.Timer _animTimer;
-    private readonly Stopwatch _stopwatch = new();
-    private int _durationMs = 200;
+    private static readonly string[] Labels = ["正式版", "测试版"];
+    private readonly SmoothValueAnimator _sliderAnimator;
+    private readonly SmoothValueAnimator _hoverAnimator;
+    private int _hoveredIndex = -1;
+    private int _paintHoveredIndex = -1;
 
     public ChannelSegmentedControl()
     {
         DoubleBuffered = true;
         SetStyle(ControlStyles.SupportsTransparentBackColor, true);
-        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true);
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.Selectable, true);
         BackColor = Color.Transparent;
         Cursor = Cursors.Hand;
         Size = new Size(136, 28);
         Font = new Font("Microsoft YaHei UI", 8.2f, FontStyle.Regular);
+        TabStop = true;
+        AccessibleRole = AccessibleRole.Grouping;
 
-        _sliderIndex = ChannelToIndex(ConfigService.Current.UpdateChannel);
-        _startPos = _sliderIndex;
-        _targetPos = _sliderIndex;
-
-        _animTimer = new System.Windows.Forms.Timer { Interval = 15 };
-        _animTimer.Tick += OnAnimTick;
+        float initial = ChannelToIndex(ConfigService.Current.UpdateChannel);
+        _sliderAnimator = new SmoothValueAnimator(this, initial, Invalidate, defaultDurationMs: 170);
+        _hoverAnimator = new SmoothValueAnimator(this, 0f, Invalidate, defaultDurationMs: 110);
 
         ThemeManager.ThemeChanged += Invalidate;
         ConfigService.ConfigChanged += OnConfigChanged;
     }
 
-    public static int ChannelToIndex(string? channel)
+    public static int ChannelToIndex(string? channel) => channel?.ToLowerInvariant() switch
     {
-        return channel?.ToLowerInvariant() switch
-        {
-            "release" or "stable" => 0,
-            _ => 1 // 默认测试版 (Beta)
-        };
-    }
+        "release" or "stable" => 0,
+        _ => 1
+    };
 
-    public static string IndexToChannel(int index)
-    {
-        return index switch
-        {
-            0 => "Release",
-            _ => "Beta"
-        };
-    }
+    public static string IndexToChannel(int index) => index == 0 ? "Release" : "Beta";
 
     private void OnConfigChanged()
     {
-        int targetIndex = ChannelToIndex(ConfigService.Current.UpdateChannel);
-        if (Math.Abs(_targetPos - targetIndex) > 0.01f)
+        _sliderAnimator.SetTarget(ChannelToIndex(ConfigService.Current.UpdateChannel));
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        base.OnMouseMove(e);
+        int hovered = SegmentedPillRenderer.HitTest(Width, Labels.Length, e.X);
+        if (_hoveredIndex != hovered)
         {
-            StartAnimation(targetIndex);
+            _hoveredIndex = hovered;
+            if (hovered >= 0) _paintHoveredIndex = hovered;
+            _hoverAnimator.SetTarget(hovered >= 0 ? 1f : 0f);
+            Invalidate();
         }
     }
 
-    private void StartAnimation(float target)
+    protected override void OnMouseLeave(EventArgs e)
     {
-        _startPos = _sliderIndex;
-        _targetPos = target;
-        _durationMs = Math.Max(40, ConfigService.GetAnimationDuration(180));
-        _stopwatch.Restart();
-        _animTimer.Start();
-    }
-
-    private void OnAnimTick(object? sender, EventArgs e)
-    {
-        float elapsed = _stopwatch.ElapsedMilliseconds;
-        float t = Math.Clamp(elapsed / _durationMs, 0f, 1f);
-
-        float ease = 1f - MathF.Pow(1f - t, 3f);
-        _sliderIndex = _startPos + (_targetPos - _startPos) * ease;
-
-        Invalidate();
-
-        if (t >= 1f)
-        {
-            _sliderIndex = _targetPos;
-            _animTimer.Stop();
-            _stopwatch.Stop();
-        }
+        base.OnMouseLeave(e);
+        _hoveredIndex = -1;
+        _hoverAnimator.SetTarget(0f);
     }
 
     protected override void OnMouseClick(MouseEventArgs e)
     {
         base.OnMouseClick(e);
-        if (e.Button == MouseButtons.Left)
-        {
-            float segWidth = Width / 2f;
-            int selected = Math.Clamp((int)(e.X / segWidth), 0, 1);
-            string channel = IndexToChannel(selected);
+        if (e.Button != MouseButtons.Left) return;
+        Focus();
+        int selected = SegmentedPillRenderer.HitTest(Width, Labels.Length, e.X);
+        if (selected >= 0) SelectChannel(selected);
+    }
 
-            if (!string.Equals(ConfigService.Current.UpdateChannel, channel, StringComparison.OrdinalIgnoreCase))
-            {
-                ConfigService.Current.UpdateChannel = channel;
-                ConfigService.Save();
-                StartAnimation(selected);
-            }
+    private void SelectChannel(int index)
+    {
+        int clamped = Math.Clamp(index, 0, Labels.Length - 1);
+        string channel = IndexToChannel(clamped);
+        if (!string.Equals(ConfigService.Current.UpdateChannel, channel, StringComparison.OrdinalIgnoreCase))
+        {
+            ConfigService.Current.UpdateChannel = channel;
+            ConfigService.Save();
+            _sliderAnimator.SetTarget(clamped);
+            AccessibilityNotifyClients(AccessibleEvents.Selection, clamped + 1);
         }
     }
+
+    protected override bool IsInputKey(Keys keyData) =>
+        keyData is Keys.Left or Keys.Right or Keys.Home or Keys.End || base.IsInputKey(keyData);
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        int current = ChannelToIndex(ConfigService.Current.UpdateChannel);
+        int next = e.KeyCode switch
+        {
+            Keys.Left => current - 1,
+            Keys.Right => current + 1,
+            Keys.Home => 0,
+            Keys.End => Labels.Length - 1,
+            _ => current
+        };
+        if (next == current) return;
+        SelectChannel(next);
+        e.Handled = e.SuppressKeyPress = true;
+    }
+
+    protected override AccessibleObject CreateAccessibilityInstance() => new SegmentedControlAccessibility(
+        this, Labels, () => ChannelToIndex(ConfigService.Current.UpdateChannel), SelectChannel);
+
+    protected override void OnGotFocus(EventArgs e) { base.OnGotFocus(e); Invalidate(); }
+    protected override void OnLostFocus(EventArgs e) { base.OnLostFocus(e); Invalidate(); }
 
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
-        var g = e.Graphics;
-        g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
-
-        var palette = ThemeManager.Palette;
-        var isDark = palette.Mode == ThemeMode.Dark;
-        var rect = new Rectangle(0, 0, Width - 1, Height - 1);
-
-        // 外层背景胶囊
-        using (var bgPath = GraphicsHelper.GetRoundedRectangle(rect, Height / 2))
-        {
-            Color outerBg = isDark ? Color.FromArgb(40, 255, 255, 255) : Color.FromArgb(20, 0, 0, 0);
-            using var bgBrush = new SolidBrush(outerBg);
-            g.FillPath(bgBrush, bgPath);
-        }
-
-        float segWidth = Width / 2f;
-
-        // 平滑滑动的胶囊滑块
-        float startX = 2f;
-        float currentX = startX + _sliderIndex * (segWidth - 2f);
-
-        var activeRect = new RectangleF(currentX, 2f, segWidth - 2f, Height - 5f);
-        using (var activePath = GraphicsHelper.GetRoundedRectangle(Rectangle.Round(activeRect), (Height - 5) / 2))
-        {
-            using var activeBrush = new SolidBrush(palette.AccentColor);
-            g.FillPath(activeBrush, activePath);
-        }
-
-        // 绘制两档标签："正式版" / "测试版"
-        string[] labels = ["正式版", "测试版"];
-        using var sf = new StringFormat
-        {
-            Alignment = StringAlignment.Center,
-            LineAlignment = StringAlignment.Center
-        };
-
-        for (int i = 0; i < 2; i++)
-        {
-            var textRect = new RectangleF(i * segWidth, 0, segWidth, Height);
-            bool isActive = Math.Abs(_sliderIndex - i) < 0.5f;
-
-            using var textBrush = new SolidBrush(isActive ? palette.AccentForeground : palette.TextMuted);
-            g.DrawString(labels[i], Font, textBrush, textRect, sf);
-        }
+        SegmentedPillRenderer.Draw(
+            this,
+            e.Graphics,
+            Labels,
+            _sliderAnimator.Value,
+            _paintHoveredIndex,
+            _hoverAnimator.Value,
+            borderedCardStyle: false,
+            Focused && ShowFocusCues);
     }
 
     protected override void Dispose(bool disposing)
@@ -167,8 +136,8 @@ public class ChannelSegmentedControl : Control
         {
             ThemeManager.ThemeChanged -= Invalidate;
             ConfigService.ConfigChanged -= OnConfigChanged;
-            _animTimer.Stop();
-            _animTimer.Dispose();
+            _sliderAnimator.Dispose();
+            _hoverAnimator.Dispose();
         }
         base.Dispose(disposing);
     }

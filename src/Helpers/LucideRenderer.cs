@@ -1,4 +1,4 @@
-using System.Drawing.Drawing2D;
+﻿using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Globalization;
 using System.Reflection;
@@ -42,6 +42,7 @@ public static class LucideRenderer
         [LucideIcon.Type] = "type.svg",
         [LucideIcon.Grid3X3] = "grid-3x3.svg",
         [LucideIcon.Undo2] = "undo-2.svg",
+        [LucideIcon.Redo2] = "undo-2.svg",
         [LucideIcon.GalleryVerticalEnd] = "gallery-vertical-end.svg",
         [LucideIcon.ChevronsDown] = "chevrons-down.svg",
         [LucideIcon.Download] = "download.svg",
@@ -91,6 +92,11 @@ public static class LucideRenderer
             graphics.CompositingQuality = CompositingQuality.HighQuality;
             graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
             graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+            if (icon == LucideIcon.Redo2)
+            {
+                graphics.TranslateTransform(x * 2 + size, 0);
+                graphics.ScaleTransform(-1, 1);
+            }
             graphics.DrawImage(bitmap, x, y, size, size);
         }
         finally

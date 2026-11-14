@@ -1,4 +1,4 @@
-using System.Drawing.Drawing2D;
+﻿using System.Drawing.Drawing2D;
 using ZSnaper.Helpers;
 using ZSnaper.Models;
 using ZSnaper.Services;
@@ -7,7 +7,7 @@ namespace ZSnaper.Controls;
 
 public sealed class WindowControls : Control
 {
-    private const int ButtonWidth = 36;
+    private int ButtonWidth => GraphicsHelper.Dip(this, 36);
     private const int ButtonCount = 2;
     private int _hoveredButton = -1;
     private int _pressedButton = -1;
@@ -120,11 +120,11 @@ public sealed class WindowControls : Control
         }
     }
 
-    private static void DrawCenteredIcon(Graphics graphics, int buttonIndex, LucideIcon icon, Color color)
+    private void DrawCenteredIcon(Graphics graphics, int buttonIndex, LucideIcon icon, Color color)
     {
-        const float iconSize = 16f;
+        float iconSize = GraphicsHelper.Dip(this, 16);
         float x = buttonIndex * ButtonWidth + (ButtonWidth - iconSize) / 2f;
-        float y = (30f - iconSize) / 2f;
+        float y = (Height - iconSize) / 2f;
         LucideRenderer.Draw(graphics, icon, x, y, iconSize, color);
     }
 
@@ -136,42 +136,11 @@ public sealed class WindowControls : Control
         ThemePalette palette)
     {
         using GraphicsPath path = GraphicsHelper.GetRoundedRectangle(bounds, 7);
-        if (isClose)
-        {
-            Color start = isPressed
-                ? Color.FromArgb(218, 38, 75)
-                : Color.FromArgb(244, 63, 94);
-            Color end = isPressed
-                ? Color.FromArgb(162, 28, 175)
-                : Color.FromArgb(192, 38, 211);
-            using var brush = new LinearGradientBrush(
-                bounds,
-                start,
-                end,
-                LinearGradientMode.ForwardDiagonal);
-            graphics.FillPath(brush, path);
-
-            using var highlightPen = new Pen(Color.FromArgb(58, 255, 255, 255), 1f);
-            graphics.DrawPath(highlightPen, path);
-            return;
-        }
-
-        int startAlpha = isPressed
-            ? palette.Mode == ThemeMode.Dark ? 52 : 34
-            : palette.Mode == ThemeMode.Dark ? 38 : 24;
-        int endAlpha = isPressed
-            ? palette.Mode == ThemeMode.Dark ? 32 : 22
-            : palette.Mode == ThemeMode.Dark ? 20 : 12;
-        using var hoverBrush = new LinearGradientBrush(
-            bounds,
-            Color.FromArgb(startAlpha, palette.TextPrimary),
-            Color.FromArgb(endAlpha, palette.TextPrimary),
-            LinearGradientMode.Vertical);
-        graphics.FillPath(hoverBrush, path);
-
-        int borderAlpha = palette.Mode == ThemeMode.Dark ? 28 : 16;
-        using var borderPen = new Pen(Color.FromArgb(borderAlpha, palette.TextPrimary), 1f);
-        graphics.DrawPath(borderPen, path);
+        Color fill = isClose
+            ? isPressed ? Color.FromArgb(190, 36, 48) : Color.FromArgb(222, 49, 63)
+            : palette.WindowControlHover;
+        using var brush = new SolidBrush(fill);
+        graphics.FillPath(brush, path);
     }
 
     private void HandleThemeChanged() => Invalidate();

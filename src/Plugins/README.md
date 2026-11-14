@@ -2,6 +2,11 @@
 
 ZSnaper loads local `.zsp` ZIP packages through **插件管理**. A new plugin is installed disabled. Enabling it runs its .NET 8 code inside the ZSnaper process with the same Windows permissions. The collectible load context helps unload assemblies for updates; it is not a security sandbox. Only enable packages you trust.
 
+Use **刷新列表** to rescan installed plugins and update their displayed state.
+The **API 开发文档** button opens the
+[Plugin API reference](https://github.com/zzbuaoye-love/ZSnaper/wiki/Plugin-API)
+in the default browser.
+
 Start with the [runnable Example.Plugin](../../samples/Example.Plugin/README.md):
 
 ```powershell

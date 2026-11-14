@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Microsoft.Win32;
 using SharpHook;
 using SharpHook.Data;
 using ZSnaper.Interop;
@@ -16,8 +17,10 @@ public class HotkeyService : NativeWindow, IDisposable
         public HotkeyGesture? Gesture { get; set; }
         public bool Registered { get; set; }
         public bool ForceBinding { get; set; }
+        public int RegistrationError { get; set; }
         public int RegistrationId { get; set; } = registrationId;
         public long SuppressUntil { get; set; }
+        public long LastTriggeredAt { get; set; } = long.MinValue;
     }
 
     private readonly record struct HotkeySnapshot(
@@ -29,10 +32,13 @@ public class HotkeyService : NativeWindow, IDisposable
     public const int HOTKEY_CAPTURE = 1;
     public const int HOTKEY_OCR = 2;
     private const int WM_APP_FORCE_TRIGGER = 0x8003;
+    private const int WM_APP_RECOVER = 0x8004;
+    private bool _disposed;
 
     public event Action? CaptureTriggered;
     public event Action? OcrTriggered;
     public event Action<HotkeyCommand>? CommandTriggered;
+    public event Action? StatusChanged;
 
     private readonly Dictionary<HotkeyCommand, HotkeyState> _states;
     private int _nextRegistrationId = 100;
@@ -43,6 +49,8 @@ public class HotkeyService : NativeWindow, IDisposable
     private readonly HashSet<KeyCode> _suppressedKeys = [];
     private HotkeyCommand? _recordingCommand;
     private Dictionary<HotkeyCommand, HotkeySnapshot>? _recordingSnapshots;
+    private readonly record struct HookBinding(HotkeyCommand Command, HotkeyGesture Gesture, bool Intercept);
+    private HookBinding[] _hookBindings = [];
 
     public bool IsCaptureRegistered => GetState(HotkeyCommand.Capture).Registered;
     public bool IsOcrRegistered => GetState(HotkeyCommand.Ocr).Registered;
@@ -57,13 +65,29 @@ public class HotkeyService : NativeWindow, IDisposable
             .Select((definition, index) => new HotkeyState(definition.Command, index + 1))
             .ToDictionary(state => state.Command);
         CreateHandle(new CreateParams());
+        SystemEvents.SessionSwitch += OnSessionSwitch;
+        SystemEvents.PowerModeChanged += OnPowerModeChanged;
     }
 
     public HotkeyGesture? GetGesture(HotkeyCommand command) => GetState(command).Gesture;
     public bool IsForceBinding(HotkeyCommand command) => GetState(command).ForceBinding;
 
+    public string GetStatusText(HotkeyCommand command)
+    {
+        HotkeyState state = GetState(command);
+        if (state.Gesture is null) return "未设置";
+        if (_recordingCommand is not null) return "录制期间暂停";
+        bool hook = _keyboardHook is { IsRunning: true } && _hookBindings.Any(binding => binding.Command == command);
+        if (state.ForceBinding) return hook ? "拦截绑定已启用" : "键盘监听不可用";
+        if (state.Registered) return hook ? "已注册 · 游戏兼容监听已启用" : "已注册 · 兼容监听不可用";
+        return state.RegistrationError == NativeMethods.ERROR_HOTKEY_ALREADY_REGISTERED
+            ? "被其他程序占用，点击更换" : $"注册失败（{state.RegistrationError}），点击更换";
+    }
+
     public void RegisterConfiguredHotkeys(out bool captureOk, out bool ocrOk)
     {
+        foreach (HotkeyState registered in _states.Values.Where(state => state.Registered))
+            NativeMethods.UnregisterHotKey(Handle, registered.RegistrationId);
         foreach (HotkeyCommandDefinition definition in HotkeyCommandCatalog.Definitions)
         {
             HotkeyCommand command = definition.Command;
@@ -80,6 +104,42 @@ public class HotkeyService : NativeWindow, IDisposable
 
         captureOk = IsActive(HotkeyCommand.Capture);
         ocrOk = IsActive(HotkeyCommand.Ocr);
+        RefreshHookBindings();
+    }
+
+    private void OnSessionSwitch(object sender, SessionSwitchEventArgs e)
+    {
+        if (e.Reason is SessionSwitchReason.SessionUnlock or SessionSwitchReason.SessionLogon)
+            QueueRecovery();
+    }
+
+    private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
+    {
+        if (e.Mode == PowerModes.Resume) QueueRecovery();
+    }
+
+    private void QueueRecovery()
+    {
+        if (!_disposed) NativeMethods.PostMessage(Handle, WM_APP_RECOVER, 0, 0);
+    }
+
+    internal void RecoverConfiguredHotkeys()
+    {
+        if (_disposed || _recordingCommand is not null) return;
+        DisposeKeyboardHook();
+        foreach (HotkeyState state in _states.Values)
+        {
+            if (state.Gesture is null || state.ForceBinding) continue;
+            if (state.Registered) NativeMethods.UnregisterHotKey(Handle, state.RegistrationId);
+            state.Registered = Register(state.RegistrationId, state.Gesture.Value);
+            state.RegistrationError = state.Registered ? 0 : Marshal.GetLastPInvokeError();
+            state.SuppressUntil = Environment.TickCount64 + 150;
+            if (!state.Registered)
+                AppDiagnostics.LogMessage("Hotkey.Recover", $"{state.Command}: registration failed ({Marshal.GetLastPInvokeError()})",
+                    Serilog.Events.LogEventLevel.Warning);
+        }
+        RefreshHookBindings();
+        if (_captureKeyPressed is not null) EnsureKeyboardHook(out _);
     }
 
     public IReadOnlyList<HotkeyCommand> GetInactiveConfiguredCommands() =>
@@ -109,6 +169,9 @@ public class HotkeyService : NativeWindow, IDisposable
         HotkeySnapshot previousState = Snapshot(state);
         if (state.Gesture == gesture && state.ForceBinding == forceBinding)
         {
+            if (!IsActive(command) && !ActivateConfiguredHotkey(command))
+                return CreateRegistrationFailureResult(Marshal.GetLastPInvokeError(), gesture);
+            RefreshHookBindings();
             return new HotkeyChangeResult(true, $"当前快捷键已是 {gesture.DisplayText}");
         }
 
@@ -201,6 +264,7 @@ public class HotkeyService : NativeWindow, IDisposable
         }
 
         _recordingCommand = command;
+        RefreshHookBindings();
         return new HotkeyChangeResult(true, string.Empty);
     }
 
@@ -260,6 +324,7 @@ public class HotkeyService : NativeWindow, IDisposable
         if (state.Gesture is not HotkeyGesture gesture) return true;
         if (state.ForceBinding) return EnsureKeyboardHook(out _);
         state.Registered = Register(state.RegistrationId, gesture);
+        state.RegistrationError = state.Registered ? 0 : Marshal.GetLastPInvokeError();
         state.SuppressUntil = Environment.TickCount64 + 750;
         return state.Registered;
     }
@@ -322,7 +387,11 @@ public class HotkeyService : NativeWindow, IDisposable
             ReleaseKeyboardHookIfUnused();
             return true;
         }
-        if (previous.ForceBinding) return EnsureKeyboardHook(out _);
+        if (previous.ForceBinding)
+        {
+            RefreshHookBindings();
+            return EnsureKeyboardHook(out _);
+        }
         if (!previous.Registered)
         {
             ReleaseKeyboardHookIfUnused();
@@ -353,9 +422,21 @@ public class HotkeyService : NativeWindow, IDisposable
 
     private void ReleaseKeyboardHookIfUnused()
     {
+        RefreshHookBindings();
         if (_keyboardHook is null || _captureKeyPressed is not null ||
-            _states.Values.Any(state => state.ForceBinding && state.Gesture is not null)) return;
+            _states.Values.Any(state => state.Gesture is not null)) return;
         DisposeKeyboardHook();
+    }
+
+    private void RefreshHookBindings()
+    {
+        Volatile.Write(ref _hookBindings, _recordingCommand is not null ? [] :
+            _states.Values.Where(state => state.Gesture is not null && (state.Registered || state.ForceBinding))
+                .Select(state => new HookBinding(state.Command, state.Gesture!.Value, state.ForceBinding)).ToArray());
+        // Native registration remains the primary path; the hook is a pass-through
+        // fallback for applications that consume ordinary hotkey messages.
+        if (_hookBindings.Length > 0) EnsureKeyboardHook(out _);
+        StatusChanged?.Invoke();
     }
 
     public bool BeginCaptureKeyboardRouting(
@@ -425,9 +506,9 @@ public class HotkeyService : NativeWindow, IDisposable
     {
         SimpleGlobalHook? hook = _keyboardHook;
         _keyboardHook = null;
+        if (hook is not null) DisposeHook(hook);
         _pressedKeys.Clear();
         _suppressedKeys.Clear();
-        if (hook is not null) DisposeHook(hook);
     }
 
     private static void DisposeHook(SimpleGlobalHook hook)
@@ -447,7 +528,7 @@ public class HotkeyService : NativeWindow, IDisposable
         if (e.IsEventSimulated || e.Data.KeyCode == KeyCode.VcUndefined) return;
         KeyCode keyCode = e.Data.KeyCode;
         bool wasSuppressed = _suppressedKeys.Contains(keyCode);
-        _pressedKeys.Add(keyCode);
+        bool firstPress = _pressedKeys.Add(keyCode);
         if (wasSuppressed)
         {
             e.SuppressEvent = true;
@@ -460,12 +541,19 @@ public class HotkeyService : NativeWindow, IDisposable
             if (e.SuppressEvent) _suppressedKeys.Add(keyCode);
             return;
         }
-        if (_recordingCommand is not null) return;
-        if (TryGetForceCommand(keyCode, out HotkeyCommand command))
+        if (!firstPress) return;
+        HotkeyGesture gesture = CreateGestureFromPressedKeys(keyCode);
+        foreach (HookBinding binding in Volatile.Read(ref _hookBindings))
         {
-            _suppressedKeys.Add(keyCode);
-            e.SuppressEvent = true;
-            NativeMethods.PostMessage(Handle, WM_APP_FORCE_TRIGGER, (nint)command, 0);
+            if (binding.Gesture != gesture) continue;
+            if (binding.Intercept)
+            {
+                _suppressedKeys.Add(keyCode);
+                e.SuppressEvent = true;
+            }
+            NativeMethods.PostMessage(Handle, WM_APP_FORCE_TRIGGER, (nint)binding.Command,
+                (nint)(gesture.KeyCode | gesture.Modifiers));
+            break;
         }
     }
 
@@ -482,23 +570,13 @@ public class HotkeyService : NativeWindow, IDisposable
     private HotkeyGesture CreateGestureFromPressedKeys(KeyCode keyCode)
     {
         Keys modifiers = Keys.None;
-        if (_pressedKeys.Any(IsControlKey)) modifiers |= Keys.Control;
-        if (_pressedKeys.Any(IsAltKey)) modifiers |= Keys.Alt;
-        if (_pressedKeys.Any(IsShiftKey)) modifiers |= Keys.Shift;
+        // Read current modifier state instead of trusting key-up events across
+        // lock/unlock, hook restarts and foreground changes.
+        if ((NativeMethods.GetAsyncKeyState((int)Keys.ControlKey) & 0x8000) != 0) modifiers |= Keys.Control;
+        if ((NativeMethods.GetAsyncKeyState((int)Keys.Menu) & 0x8000) != 0) modifiers |= Keys.Alt;
+        if ((NativeMethods.GetAsyncKeyState((int)Keys.ShiftKey) & 0x8000) != 0) modifiers |= Keys.Shift;
         return new HotkeyGesture(ToWinFormsKey(keyCode), modifiers);
     }
-
-    private bool TryGetForceCommand(KeyCode keyCode, out HotkeyCommand command)
-    {
-        HotkeyGesture pressed = CreateGestureFromPressedKeys(keyCode);
-        HotkeyState? match = _states.Values.FirstOrDefault(state => state.ForceBinding && state.Gesture == pressed);
-        command = match?.Command ?? default;
-        return match is not null;
-    }
-
-    private static bool IsControlKey(KeyCode keyCode) => keyCode is KeyCode.VcLeftControl or KeyCode.VcRightControl;
-    private static bool IsAltKey(KeyCode keyCode) => keyCode is KeyCode.VcLeftAlt or KeyCode.VcRightAlt;
-    private static bool IsShiftKey(KeyCode keyCode) => keyCode is KeyCode.VcLeftShift or KeyCode.VcRightShift;
 
     private static Keys ToWinFormsKey(KeyCode keyCode)
     {
@@ -544,7 +622,10 @@ public class HotkeyService : NativeWindow, IDisposable
     private void TriggerCommand(HotkeyCommand command)
     {
         HotkeyState state = GetState(command);
-        if (Environment.TickCount64 < state.SuppressUntil) return;
+        long now = Environment.TickCount64;
+        if (_recordingCommand is not null || state.Gesture is null || now < state.SuppressUntil ||
+            (state.LastTriggeredAt != long.MinValue && now - state.LastTriggeredAt < 200)) return;
+        state.LastTriggeredAt = now;
         if (command == HotkeyCommand.Capture) CaptureTriggered?.Invoke();
         if (command == HotkeyCommand.Ocr) OcrTriggered?.Invoke();
         CommandTriggered?.Invoke(command);
@@ -601,10 +682,16 @@ public class HotkeyService : NativeWindow, IDisposable
 
     protected override void WndProc(ref Message m)
     {
-        if (m.Msg == WM_APP_FORCE_TRIGGER)
+        if (m.Msg == WM_APP_RECOVER)
+        {
+            RecoverConfiguredHotkeys();
+        }
+        else if (m.Msg == WM_APP_FORCE_TRIGGER)
         {
             HotkeyCommand command = (HotkeyCommand)m.WParam.ToInt32();
-            if (_states.ContainsKey(command)) TriggerCommand(command);
+            if (_states.TryGetValue(command, out HotkeyState? state) &&
+                state.Gesture is HotkeyGesture gesture && (int)(gesture.KeyCode | gesture.Modifiers) == m.LParam.ToInt32())
+                TriggerCommand(command);
         }
         else if (m.Msg == NativeMethods.WM_HOTKEY)
         {
@@ -617,6 +704,11 @@ public class HotkeyService : NativeWindow, IDisposable
 
     public void Dispose()
     {
+        if (_disposed) return;
+        _disposed = true;
+        SystemEvents.SessionSwitch -= OnSessionSwitch;
+        SystemEvents.PowerModeChanged -= OnPowerModeChanged;
+        Volatile.Write(ref _hookBindings, []);
         foreach (HotkeyState state in _states.Values.Where(candidate => candidate.Registered))
         {
             NativeMethods.UnregisterHotKey(Handle, state.RegistrationId);

@@ -1,5 +1,4 @@
-using System.Diagnostics;
-using System.Drawing.Drawing2D;
+﻿using System.Drawing.Drawing2D;
 using ZSnaper.Helpers;
 using ZSnaper.Models;
 using ZSnaper.Services;
@@ -9,15 +8,8 @@ namespace ZSnaper.Controls;
 public class ModernToggleSwitch : Control
 {
     private bool _checked = true;
-    private bool _isHovered;
-
-    // 动画状态 (0.0f = 关闭, 1.0f = 开启)
-    private float _animationProgress = 1.0f;
-    private float _startProgress = 1.0f;
-    private float _targetProgress = 1.0f;
-    private readonly System.Windows.Forms.Timer _animTimer;
-    private readonly Stopwatch _stopwatch = new();
-    private int _durationMs = 200;
+    private readonly SmoothValueAnimator _progressAnimator;
+    private readonly SmoothValueAnimator _hoverAnimator;
 
     public bool Checked
     {
@@ -27,7 +19,8 @@ public class ModernToggleSwitch : Control
             if (_checked != value)
             {
                 _checked = value;
-                StartAnimation(value ? 1.0f : 0.0f);
+                _progressAnimator.SetTarget(value ? 1f : 0f);
+                AccessibilityNotifyClients(AccessibleEvents.StateChange, -1);
                 CheckedChanged?.Invoke(this, EventArgs.Empty);
             }
         }
@@ -35,59 +28,39 @@ public class ModernToggleSwitch : Control
 
     public event EventHandler? CheckedChanged;
 
+    protected override AccessibleObject CreateAccessibilityInstance() => new SwitchAccessibility(this);
+    private sealed class SwitchAccessibility(ModernToggleSwitch owner) : ControlAccessibleObject(owner)
+    {
+        public override AccessibleStates State => base.State | (owner.Checked ? AccessibleStates.Checked : AccessibleStates.None);
+        public override string DefaultAction => "切换";
+        public override void DoDefaultAction() { if (owner.Enabled) owner.Checked = !owner.Checked; }
+    }
+
     public ModernToggleSwitch()
     {
         DoubleBuffered = true;
         SetStyle(ControlStyles.SupportsTransparentBackColor, true);
-        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true);
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.Selectable, true);
         BackColor = Color.Transparent;
         Cursor = Cursors.Hand;
-        Size = new Size(40, 22);
+        Size = new Size(52, 32);
+        TabStop = true;
+        AccessibleRole = AccessibleRole.CheckButton;
 
-        _animTimer = new System.Windows.Forms.Timer { Interval = 15 };
-        _animTimer.Tick += OnAnimTick;
-    }
-
-    private void StartAnimation(float target)
-    {
-        _startProgress = _animationProgress;
-        _targetProgress = target;
-        _durationMs = Math.Max(40, ConfigService.GetAnimationDuration(180));
-        _stopwatch.Restart();
-        _animTimer.Start();
-    }
-
-    private void OnAnimTick(object? sender, EventArgs e)
-    {
-        float elapsed = _stopwatch.ElapsedMilliseconds;
-        float t = Math.Clamp(elapsed / _durationMs, 0f, 1f);
-
-        // 丝滑 EaseOutCubic 缓动曲线
-        float ease = 1f - MathF.Pow(1f - t, 3f);
-        _animationProgress = _startProgress + (_targetProgress - _startProgress) * ease;
-
-        Invalidate();
-
-        if (t >= 1f)
-        {
-            _animationProgress = _targetProgress;
-            _animTimer.Stop();
-            _stopwatch.Stop();
-        }
+        _progressAnimator = new SmoothValueAnimator(this, 1f, Invalidate, defaultDurationMs: 170);
+        _hoverAnimator = new SmoothValueAnimator(this, 0f, Invalidate, defaultDurationMs: 110);
     }
 
     protected override void OnMouseEnter(EventArgs e)
     {
         base.OnMouseEnter(e);
-        _isHovered = true;
-        Invalidate();
+        _hoverAnimator.SetTarget(1f);
     }
 
     protected override void OnMouseLeave(EventArgs e)
     {
         base.OnMouseLeave(e);
-        _isHovered = false;
-        Invalidate();
+        _hoverAnimator.SetTarget(0f);
     }
 
     protected override void OnMouseClick(MouseEventArgs e)
@@ -95,6 +68,7 @@ public class ModernToggleSwitch : Control
         base.OnMouseClick(e);
         if (e.Button == MouseButtons.Left)
         {
+            Focus();
             Checked = !Checked;
         }
     }
@@ -106,51 +80,68 @@ public class ModernToggleSwitch : Control
         g.SmoothingMode = SmoothingMode.AntiAlias;
 
         var palette = ThemeManager.Palette;
-        var isDark = palette.Mode == ThemeMode.Dark;
+        float progress = Math.Clamp(_progressAnimator.Value, 0f, 1f);
+        float hover = Math.Clamp(_hoverAnimator.Value, 0f, 1f);
 
-        var rect = new Rectangle(0, 0, Width - 1, Height - 1);
-        using var path = GraphicsHelper.GetRoundedRectangle(rect, Height / 2);
+        var rect = new RectangleF(1f, 1f, Width - 2.5f, Height - 2.5f);
+        using var path = GraphicsHelper.GetRoundedRectangle(rect, rect.Height / 2f);
 
-        // 轨道底色（插值过渡与 Hover 微光反馈）
-        Color offColor = isDark ? Color.FromArgb(_isHovered ? 65 : 50, 255, 255, 255) : Color.FromArgb(_isHovered ? 45 : 35, 0, 0, 0);
-        Color onColor = _isHovered ? Color.FromArgb(240, palette.AccentColor) : palette.AccentColor;
-        Color trackColor = BlendColors(offColor, onColor, _animationProgress);
+        Color offColor = GraphicsHelper.BlendColor(palette.SurfaceContainerHigh, palette.TextPrimary, 0.05f * hover);
+        Color onColor = GraphicsHelper.BlendColor(palette.AccentColor, palette.AccentForeground, 0.08f * hover);
+        Color trackColor = GraphicsHelper.BlendColor(offColor, onColor, progress);
 
         using (var brush = new SolidBrush(trackColor))
         {
             g.FillPath(brush, path);
         }
 
-        // 滑块圆球平滑滑动 (Thumb)
-        int thumbSize = Height - 6;
-        float startX = 3f;
-        float endX = Width - thumbSize - 3f;
-        float currentX = startX + (endX - startX) * _animationProgress;
+        Color borderOff = GraphicsHelper.BlendColor(palette.InputBorder, palette.TextPrimary, 0.25f * hover);
+        using (var outline = new Pen(GraphicsHelper.BlendColor(borderOff, onColor, progress), 1.8f))
+        {
+            g.DrawPath(outline, path);
+        }
 
-        var thumbRect = new RectangleF(currentX, 3f, thumbSize, thumbSize);
-        Color thumbColor = BlendColors(Color.White, palette.AccentForeground, _animationProgress);
+        float scale = DeviceDpi / 96f;
+        float thumbBase = 16f + 8f * progress;
+        float thumbSize = (thumbBase + 1.4f * hover) * scale;
+        float startX = 8f * scale - 0.7f * hover * scale;
+        float endX = Width - thumbSize - 3.5f * scale;
+        float currentX = startX + (endX - startX) * progress;
+
+        var thumbRect = new RectangleF(currentX, (Height - thumbSize) / 2f, thumbSize, thumbSize);
+        Color thumbColor = GraphicsHelper.BlendColor(palette.InputBorder, palette.AccentForeground, progress);
         using (var thumbBrush = new SolidBrush(thumbColor))
         {
             g.FillEllipse(thumbBrush, thumbRect);
         }
+
+        if (Focused && ShowFocusCues)
+        {
+            using var focus = new Pen(palette.AccentColor, 1.5f);
+            g.DrawPath(focus, path);
+        }
     }
 
-    private static Color BlendColors(Color c1, Color c2, float factor)
+    protected override void OnKeyDown(KeyEventArgs e)
     {
-        factor = Math.Clamp(factor, 0f, 1f);
-        int a = (int)(c1.A + (c2.A - c1.A) * factor);
-        int r = (int)(c1.R + (c2.R - c1.R) * factor);
-        int g = (int)(c1.G + (c2.G - c1.G) * factor);
-        int b = (int)(c1.B + (c2.B - c1.B) * factor);
-        return Color.FromArgb(a, r, g, b);
+        base.OnKeyDown(e);
+        if (e.KeyCode is Keys.Space or Keys.Enter)
+        {
+            Checked = !Checked;
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+        }
     }
+
+    protected override void OnGotFocus(EventArgs e) { base.OnGotFocus(e); Invalidate(); }
+    protected override void OnLostFocus(EventArgs e) { base.OnLostFocus(e); Invalidate(); }
 
     protected override void Dispose(bool disposing)
     {
         if (disposing)
         {
-            _animTimer.Stop();
-            _animTimer.Dispose();
+            _progressAnimator.Dispose();
+            _hoverAnimator.Dispose();
         }
         base.Dispose(disposing);
     }

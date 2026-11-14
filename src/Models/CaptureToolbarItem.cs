@@ -1,4 +1,4 @@
-namespace ZSnaper.Models;
+﻿namespace ZSnaper.Models;
 
 public enum CaptureToolbarItem
 {
@@ -16,7 +16,8 @@ public enum CaptureToolbarItem
     Reset = 11,
     Cancel = 12,
     Confirm = 13,
-    ScrollCapture = 14
+    ScrollCapture = 14,
+    Redo = 15
 }
 
 public enum AnnotationToolBehavior
@@ -60,6 +61,7 @@ public static class CaptureToolbarDefaults
         CaptureToolbarItem.Mosaic,
         CaptureToolbarItem.Style,
         CaptureToolbarItem.Undo,
+        CaptureToolbarItem.Redo,
         CaptureToolbarItem.Cursor,
         CaptureToolbarItem.ScrollCapture,
         CaptureToolbarItem.Ocr,
@@ -89,6 +91,7 @@ public static class CaptureToolbarDefaults
             CaptureToolbarItem.Mosaic,
             CaptureToolbarItem.Style,
             CaptureToolbarItem.Undo,
+        CaptureToolbarItem.Redo,
             CaptureToolbarItem.Copy,
             CaptureToolbarItem.Save,
             CaptureToolbarItem.Pin,
@@ -117,6 +120,7 @@ public static class CaptureToolbarDefaults
         CaptureToolbarItem.Mosaic => "马赛克",
         CaptureToolbarItem.Style => "颜色与字体",
         CaptureToolbarItem.Undo => "撤销",
+        CaptureToolbarItem.Redo => "重做",
         CaptureToolbarItem.Cursor => "鼠标指针",
         CaptureToolbarItem.ScrollCapture => "长截图",
         CaptureToolbarItem.Ocr => "OCR 识别",

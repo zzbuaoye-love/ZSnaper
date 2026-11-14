@@ -5,7 +5,7 @@ namespace ZSnaper.Services;
 public static class ThemeManager
 {
     private static ThemeMode _currentMode = ThemeMode.Light;
-    private static Color _accentColor = ColorTranslator.FromHtml("#10B981");
+    private static Color _accentColor = ColorTranslator.FromHtml(AppConfig.DefaultAccentColorHex);
     private static bool _enableGlow = true;
 
     static ThemeManager()
@@ -18,7 +18,7 @@ public static class ThemeManager
         }
         catch
         {
-            _accentColor = ColorTranslator.FromHtml("#10B981");
+            _accentColor = ColorTranslator.FromHtml(AppConfig.DefaultAccentColorHex);
         }
         RebuildPalette();
     }

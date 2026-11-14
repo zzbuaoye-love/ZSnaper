@@ -17,7 +17,13 @@ internal static class Program
             ApplicationConfiguration.Initialize();
             Application.AddMessageFilter(new MouseWheelHoverFilter());
 
-            using var singleInstance = new SingleInstanceCoordinator();
+            string? instanceScope = null;
+#if DEBUG
+            string checkoutId = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes(AppContext.BaseDirectory.ToUpperInvariant())))[..16];
+            instanceScope = $"ZSnaper.Development.{Process.GetCurrentProcess().SessionId}.{checkoutId}";
+#endif
+            using var singleInstance = new SingleInstanceCoordinator(instanceScope);
             if (!singleInstance.IsPrimary)
             {
                 if (singleInstance.NotifyPrimaryInstance() || !singleInstance.TryBecomePrimary())

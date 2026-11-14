@@ -1,4 +1,4 @@
-using System.Drawing.Drawing2D;
+﻿using System.Drawing.Drawing2D;
 using ZSnaper.Helpers;
 using ZSnaper.Models;
 using ZSnaper.Services;
@@ -7,8 +7,8 @@ namespace ZSnaper.Controls;
 
 public class ModernButton : Control
 {
-    private bool _isHovered;
-    private bool _isPressed;
+    private readonly SmoothValueAnimator _hoverAnimator;
+    private readonly SmoothValueAnimator _pressAnimator;
     private string _text = "按钮";
     private bool _isPrimary = true;
     private LucideIcon? _icon;
@@ -34,7 +34,7 @@ public class ModernButton : Control
         }
     }
 
-    public int CornerRadius { get; set; } = 6;
+    public int CornerRadius { get; set; } = 20;
 
     public LucideIcon? Icon
     {
@@ -67,20 +67,23 @@ public class ModernButton : Control
         Size = new Size(130, 38);
         Font = new Font("Microsoft YaHei UI", 9.5f, FontStyle.Regular);
         TabStop = true;
+        AccessibleRole = AccessibleRole.PushButton;
+        _hoverAnimator = new SmoothValueAnimator(this, 0f, Invalidate, defaultDurationMs: 120);
+        _pressAnimator = new SmoothValueAnimator(this, 0f, Invalidate, defaultDurationMs: 85);
     }
 
     protected override void OnMouseEnter(EventArgs e)
     {
         base.OnMouseEnter(e);
-        _isHovered = true;
+        _hoverAnimator.SetTarget(1f);
         Invalidate();
     }
 
     protected override void OnMouseLeave(EventArgs e)
     {
         base.OnMouseLeave(e);
-        _isHovered = false;
-        _isPressed = false;
+        _hoverAnimator.SetTarget(0f);
+        _pressAnimator.SetTarget(0f);
         Invalidate();
     }
 
@@ -89,7 +92,8 @@ public class ModernButton : Control
         base.OnMouseDown(e);
         if (e.Button == MouseButtons.Left)
         {
-            _isPressed = true;
+            Focus();
+            _pressAnimator.SetTarget(1f);
             Invalidate();
         }
     }
@@ -97,7 +101,7 @@ public class ModernButton : Control
     protected override void OnMouseUp(MouseEventArgs e)
     {
         base.OnMouseUp(e);
-        _isPressed = false;
+        _pressAnimator.SetTarget(0f);
         Invalidate();
     }
 
@@ -110,7 +114,7 @@ public class ModernButton : Control
     protected override void OnLostFocus(EventArgs e)
     {
         base.OnLostFocus(e);
-        _isPressed = false;
+        _pressAnimator.SetTarget(0f);
         Invalidate();
     }
 
@@ -133,29 +137,29 @@ public class ModernButton : Control
         g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
 
         var palette = ThemeManager.Palette;
-        int pressedOffset = _isPressed ? 1 : 0;
-        var rect = new Rectangle(0, pressedOffset, Width - 1, Height - 1 - pressedOffset);
-        if (rect.Width <= 0 || rect.Height <= 0) return;
+        float hover = Math.Clamp(_hoverAnimator.Value, 0f, 1f);
+        float press = Math.Clamp(_pressAnimator.Value, 0f, 1f);
+        float pressedOffset = press;
+        var rectF = new RectangleF(0.5f, 0.5f + pressedOffset, Width - 1.5f, Height - 1.5f - pressedOffset);
+        var rect = new Rectangle(0, (int)Math.Round(pressedOffset), Width - 1, Math.Max(1, Height - 1 - (int)Math.Round(pressedOffset)));
+        if (rectF.Width <= 0 || rectF.Height <= 0) return;
 
         if (IsIconOnly)
         {
             if (_icon is LucideIcon iconOnly)
             {
-                int iconSize = Math.Clamp(IconSize, 10, Math.Min(rect.Width, rect.Height));
-                Color iconColor = _isPressed
-                    ? palette.AccentColor
-                    : _isHovered
-                        ? palette.TextPrimary
-                        : palette.TextSecondary;
-                float iconX = rect.Left + (rect.Width - iconSize) / 2f;
-                float iconY = rect.Top + (rect.Height - iconSize) / 2f;
+                int iconSize = Math.Clamp(GraphicsHelper.Dip(this, IconSize), GraphicsHelper.Dip(this, 10), Math.Min(rect.Width, rect.Height));
+                Color hoverColor = GraphicsHelper.BlendColor(palette.TextSecondary, palette.TextPrimary, hover);
+                Color iconColor = GraphicsHelper.BlendColor(hoverColor, palette.AccentColor, press);
+                float iconX = rectF.Left + (rectF.Width - iconSize) / 2f;
+                float iconY = rectF.Top + (rectF.Height - iconSize) / 2f;
                 LucideRenderer.Draw(g, iconOnly, iconX, iconY, iconSize, iconColor, 1.8f);
             }
 
             return;
         }
 
-        using var path = GraphicsHelper.GetRoundedRectangle(rect, CornerRadius);
+        using var path = GraphicsHelper.GetRoundedRectangle(rectF, GraphicsHelper.Dip(this, CornerRadius));
 
         Color fillBg;
         Color textColor;
@@ -163,23 +167,16 @@ public class ModernButton : Control
 
         if (_isPrimary)
         {
-            fillBg = _isPressed
-                ? Blend(palette.AccentColor, Color.Black, 0.14f)
-                : _isHovered
-                    ? Blend(palette.AccentColor, Color.White, 0.10f)
-                    : palette.AccentColor;
-
+            Color hoverTarget = GraphicsHelper.BlendColor(palette.AccentColor, Color.White, 0.12f * hover);
+            fillBg = GraphicsHelper.BlendColor(hoverTarget, Color.Black, 0.14f * press);
             textColor = palette.AccentForeground;
         }
         else
         {
-            fillBg = _isPressed
-                ? palette.NavItemHover
-                : _isHovered
-                    ? Color.FromArgb(palette.Mode == Models.ThemeMode.Dark ? 38 : 22, palette.TextPrimary)
-                    : palette.CardBg;
+            Color hoverTarget = GraphicsHelper.BlendColor(palette.CardBg, palette.TextPrimary, 0.05f * hover);
+            fillBg = GraphicsHelper.BlendColor(hoverTarget, palette.TextPrimary, 0.05f * press);
             textColor = palette.TextPrimary;
-            borderColor = palette.CardBorder;
+            borderColor = GraphicsHelper.BlendColor(palette.CardBorder, palette.AccentColor, 0.25f * hover);
         }
 
         if (!Enabled)
@@ -200,21 +197,21 @@ public class ModernButton : Control
             g.DrawPath(pen, path);
         }
 
-        if (Focused)
+        if (Focused && ShowFocusCues)
         {
             var focusRect = Rectangle.Inflate(rect, -2, -2);
             using var focusPath = GraphicsHelper.GetRoundedRectangle(focusRect, Math.Max(2, CornerRadius - 2));
-            using var focusPen = new Pen(Color.FromArgb(150, palette.AccentColor), 1f) { DashStyle = DashStyle.Dot };
+            using var focusPen = new Pen(Color.FromArgb(150, textColor), 1f);
             g.DrawPath(focusPen, focusPath);
         }
 
         if (_icon is LucideIcon icon)
         {
-            int iconSize = Math.Clamp(IconSize, 10, Math.Max(10, rect.Height - 8));
+            int iconSize = Math.Clamp(GraphicsHelper.Dip(this, IconSize), GraphicsHelper.Dip(this, 10), Math.Max(10, rect.Height - GraphicsHelper.Dip(this, 8)));
             Size textSize = string.IsNullOrEmpty(_text)
                 ? Size.Empty
                 : TextRenderer.MeasureText(g, _text, Font, Size.Empty, TextFormatFlags.NoPadding);
-            int gap = textSize.Width > 0 ? IconGap : 0;
+            int gap = textSize.Width > 0 ? GraphicsHelper.Dip(this, IconGap) : 0;
             int groupWidth = iconSize + gap + textSize.Width;
 
             if (IconPosition == IconPosition.Right && textSize.Width > 0)
@@ -272,14 +269,14 @@ public class ModernButton : Control
         }
     }
 
-    private static Color Blend(Color source, Color target, float amount)
+    protected override void Dispose(bool disposing)
     {
-        amount = Math.Clamp(amount, 0f, 1f);
-        return Color.FromArgb(
-            source.A,
-            (int)Math.Round(source.R + (target.R - source.R) * amount),
-            (int)Math.Round(source.G + (target.G - source.G) * amount),
-            (int)Math.Round(source.B + (target.B - source.B) * amount));
+        if (disposing)
+        {
+            _hoverAnimator.Dispose();
+            _pressAnimator.Dispose();
+        }
+        base.Dispose(disposing);
     }
 }
 

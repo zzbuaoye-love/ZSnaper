@@ -27,13 +27,17 @@ public enum AppLogLevel
 
 public class AppConfig
 {
+    public const string DefaultAccentColorHex = "#1E293B"; // 黑白预设的稳定配置值
+
     public AppLogLevel LogLevel { get; set; } = AppLogLevel.Information;
     public ThemeMode Theme { get; set; } = ThemeMode.Light;
     public AnimationLevel AnimationMode { get; set; } = AnimationLevel.Balanced;
     public bool EnableGlowEffect { get; set; } = true;
     public bool EnableBackgroundGlow { get => EnableGlowEffect; set => EnableGlowEffect = value; }
-    public string AccentColorHex { get; set; } = "#10B981"; // 翡翠绿
+    public string AccentColorHex { get; set; } = DefaultAccentColorHex;
+    public bool ShowSidebarLabels { get; set; } = true;
     public bool AutoCopyClipboard { get; set; } = true;
+    public List<string> RecentCaptureFiles { get; set; } = [];
     public OcrProviderKind OcrProvider { get; set; } = OcrProviderKind.WindowsLocal;
     public string OcrApiEndpoint { get; set; } = string.Empty;
     public string OcrApiModel { get; set; } = string.Empty;
@@ -198,7 +202,7 @@ public static class ConfigService
         error = string.Empty;
         if (!Enum.IsDefined(location))
         {
-            error = "无效的配置存放位置。";
+            error = "无效的配置存放位置";
             return false;
         }
 
@@ -219,7 +223,7 @@ public static class ConfigService
             {
                 AppDiagnostics.LogException("ConfigService.StorageLocation", exception);
                 error = exception is UnauthorizedAccessException
-                    ? "目标目录不可写，请检查程序安装目录的权限。"
+                    ? "目标目录不可写，请检查程序安装目录的权限"
                     : $"切换配置目录失败：{exception.Message}";
                 return false;
             }

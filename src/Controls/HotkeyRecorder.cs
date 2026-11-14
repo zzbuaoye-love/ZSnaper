@@ -1,4 +1,4 @@
-using System.Drawing.Drawing2D;
+﻿using System.Drawing.Drawing2D;
 using ZSnaper.Helpers;
 using ZSnaper.Models;
 using ZSnaper.Services;
@@ -56,7 +56,7 @@ public sealed class HotkeyRecorder : Control
         BackColor = Color.Transparent;
         Cursor = Cursors.Hand;
         Size = new Size(142, 34);
-        Font = new Font("Segoe UI", 9f, FontStyle.Bold);
+        Font = new Font("Segoe UI", 9.5f, FontStyle.Regular);
         TabStop = true;
         AccessibleRole = AccessibleRole.PushButton;
         AccessibleName = "修改快捷键";
@@ -163,26 +163,29 @@ public sealed class HotkeyRecorder : Control
         graphics.SmoothingMode = SmoothingMode.AntiAlias;
         ThemePalette palette = ThemeManager.Palette;
 
-        var rect = new Rectangle(0, 0, Width - 1, Height - 1);
-        using GraphicsPath path = GraphicsHelper.GetRoundedRectangle(rect, 8);
+        var rect = new Rectangle(1, 1, Width - 3, Height - 3);
+        using GraphicsPath path = GraphicsHelper.GetRoundedRectangle(rect, GraphicsHelper.Dip(this, 12));
         Color fillColor = _isRecording
-            ? Color.FromArgb(palette.Mode == ThemeMode.Dark ? 32 : 18, palette.AccentColor)
-            : _isHovered
-                ? palette.NavItemHover
-                : palette.CardBg;
+            ? palette.PrimaryContainer
+            : palette.InputBg;
         using (var fillBrush = new SolidBrush(fillColor))
         {
             graphics.FillPath(fillBrush, path);
         }
+        if (_isHovered && !_isRecording)
+        {
+            using var state = new SolidBrush(Color.FromArgb(10, palette.TextPrimary));
+            graphics.FillPath(state, path);
+        }
 
         Color borderColor = _isRecording || Focused ? palette.AccentColor : palette.CardBorder;
-        using (var borderPen = new Pen(borderColor, _isRecording ? 1.4f : 1f))
+        using (var borderPen = new Pen(borderColor, _isRecording || Focused ? 2f : 1f))
         {
             graphics.DrawPath(borderPen, path);
         }
 
-        Color contentColor = _isRecording ? palette.AccentColor : palette.TextPrimary;
-        LucideRenderer.Draw(graphics, LucideIcon.Keyboard, 11, 9, 16, contentColor, 1.8f);
+        Color contentColor = _isRecording ? palette.OnPrimaryContainer : palette.TextPrimary;
+        LucideRenderer.Draw(graphics, LucideIcon.Keyboard, GraphicsHelper.Dip(this, 11), (Height - GraphicsHelper.Dip(this, 16)) / 2f, GraphicsHelper.Dip(this, 16), contentColor, 1.8f);
         string displayText = _isRecording
             ? "请按新的快捷键…"
             : _hasGesture ? _gesture.DisplayText : "未设置";
@@ -190,7 +193,7 @@ public sealed class HotkeyRecorder : Control
             graphics,
             displayText,
             Font,
-            new Rectangle(36, 0, Math.Max(1, Width - 44), Height),
+            new Rectangle(GraphicsHelper.Dip(this, 36), 0, Math.Max(1, Width - GraphicsHelper.Dip(this, 44)), Height),
             contentColor,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
     }

@@ -11,14 +11,25 @@ public static class CaptureService
     /// <summary>
     /// 截取指定虚拟屏幕区域
     /// </summary>
-    public static Bitmap CaptureScreen(Rectangle bounds)
+    public static Bitmap CaptureScreen(Rectangle bounds) => CaptureScreen(bounds, preferDesktopDuplication: false);
+
+    public static Bitmap CaptureScreen(Rectangle bounds, bool preferDesktopDuplication)
     {
         if (bounds.Width <= 0 || bounds.Height <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(bounds), "The capture area must have a positive size.");
         }
 
-        var bitmap = new Bitmap(bounds.Width, bounds.Height);
+        bool hdr = DesktopDuplicationCapture.HasHdrOutput(bounds);
+        if (preferDesktopDuplication || hdr)
+        {
+            if (DesktopDuplicationCapture.TryCapture(bounds, out Bitmap? frame)) return frame!;
+            if (hdr) throw new InvalidOperationException("HDR 屏幕捕获失败，请稍后重试或切换为无边框全屏");
+        }
+
+        // Screen pixels have no useful alpha channel; an opaque surface also avoids
+        // interpreting undefined driver alpha as transparent selection pixels.
+        var bitmap = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format32bppRgb);
         try
         {
             using Graphics graphics = Graphics.FromImage(bitmap);

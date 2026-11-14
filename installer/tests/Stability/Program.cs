@@ -34,6 +34,15 @@ internal static partial class Program
             Console.WriteLine("Capture experience regression tests passed.");
             return 0;
         }
+        if (args.Contains("--plugin-arrow-smoke"))
+        {
+            Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+            TestPluginArrows(args.Contains("--plugin-arrow-preview"),
+                args.FirstOrDefault(arg => arg.StartsWith("--plugin-arrow-package=", StringComparison.Ordinal))?
+                    ["--plugin-arrow-package=".Length..]);
+            Console.WriteLine("Plugin arrow integration tests passed.");
+            return 0;
+        }
         if (args.Contains("--game-capture-smoke"))
         {
             TestForegroundGameCapture();

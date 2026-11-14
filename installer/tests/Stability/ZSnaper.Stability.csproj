@@ -13,5 +13,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\..\ZSnaper.csproj" />
+    <ProjectReference Include="../../../samples/ArrowTools.Plugin/ArrowTools.Plugin.csproj" />
   </ItemGroup>
 </Project>

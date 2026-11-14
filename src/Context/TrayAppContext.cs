@@ -63,6 +63,7 @@ public class TrayAppContext : ApplicationContext
         _overlay.AttachHotkeyService(_hotkeyService);
         _hotkeyService.CommandTriggered += ExecuteHotkeyCommand;
         _pluginManager = new PluginRuntimeManager();
+        _overlay.AttachPluginManager(_pluginManager);
 
         _mainForm = new MainForm
         {

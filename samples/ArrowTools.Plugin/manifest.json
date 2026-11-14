@@ -1,0 +1,16 @@
+{
+  "manifestVersion": 1,
+  "id": "zsnaper.arrow-tools",
+  "name": "箭头扩展",
+  "description": "在截图浮层中绘制可编辑的空心箭头和折线箭头",
+  "version": "1.0.0",
+  "entry": {
+    "assembly": "ArrowTools.Plugin.dll",
+    "type": "ArrowTools.Plugin.ArrowToolsPlugin"
+  },
+  "requires": {
+    "hostApis": ["overlay"],
+    "pluginApi": ">=1.1.0 <2.0.0",
+    "appVersion": ">=0.0.6-beta"
+  }
+}

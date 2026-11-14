@@ -4,18 +4,21 @@ using ZSnaper.Services;
 
 namespace ZSnaper.Plugins;
 
-internal sealed class PluginHost : IZSnaperHost, IDisposable
+internal sealed class PluginHost : IZSnaperOverlayHost, IDisposable
 {
     public PluginHost(string id, CaptureSnapshot? latest, Action changed)
     {
         CaptureApi = new PluginCaptureApi(id, latest);
         ToolbarApi = new PluginToolbarApi(id, changed);
+        OverlayApi = new PluginOverlayApi(id, changed);
         Logger = new PluginLogger(id);
     }
 
     public PluginHostInfo Info { get; } = new() { AppVersion = AppVersionInfo.Version };
     public PluginCaptureApi CaptureApi { get; }
     public PluginToolbarApi ToolbarApi { get; }
+    public PluginOverlayApi OverlayApi { get; }
+    public IZSnaperOverlayApi Overlay => OverlayApi;
     public IZSnaperCaptureApi Capture => CaptureApi;
     public IZSnaperOcrApi Ocr { get; } = new PluginOcrApi();
     public IZSnaperToolbarApi Toolbar => ToolbarApi;
@@ -25,6 +28,7 @@ internal sealed class PluginHost : IZSnaperHost, IDisposable
     {
         CaptureApi.Dispose();
         ToolbarApi.Dispose();
+        OverlayApi.Dispose();
     }
 }
 

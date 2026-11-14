@@ -1,4 +1,5 @@
-﻿using System.Drawing.Drawing2D;
+﻿using ZSnaper.Plugins;
+using System.Drawing.Drawing2D;
 using System.Globalization;
 using SharpHook;
 using SharpHook.Data;
@@ -89,6 +90,34 @@ public class OverlayForm : Form
     private volatile bool _preserveForeground;
     private volatile bool _captureOverlayVisible;
     private HotkeyService? _hotkeyService;
+    private PluginRuntimeManager? _pluginManager;
+    private PluginArrowToolInfo[] _pluginArrowTools = [];
+    private PluginArrowDrawing?[] _pluginArrowIcons = [];
+    private const int PluginArrowStyleBase = 1000;
+
+    private PluginArrowToolInfo? _activePluginArrow;
+    private StyleAction _hoveredPluginArrowStyle;
+
+    public void AttachPluginManager(PluginRuntimeManager manager)
+    {
+        _pluginManager = manager;
+        RefreshPluginArrowTools();
+    }
+
+    private void RefreshPluginArrowTools()
+    {
+        _pluginArrowTools = _pluginManager?.GetArrowTools().ToArray() ?? [];
+        _pluginArrowIcons = _pluginArrowTools.Select(tool =>
+            PluginArrowDrawing.Build(tool, new PointF(2, 16), new PointF(16, 2), 1.2f)).ToArray();
+    }
+
+    private PluginArrowToolInfo? GetPluginArrowStyle(StyleAction action)
+    {
+        int index = (int)action - PluginArrowStyleBase;
+        return index >= 0 && index < _pluginArrowTools.Length ? _pluginArrowTools[index] : null;
+    }
+
+    private PluginArrowToolInfo? SelectedPluginArrow => _selectedArrow is { } arrow ? arrow.PluginTool : _activePluginArrow;
     private readonly HashSet<KeyCode> _suppressedCaptureKeys = [];
     private static readonly Font SizeLabelFont = new("Segoe UI", 8.5f, FontStyle.Bold);
     private static readonly Font CaptureHintFont = new("Microsoft YaHei UI", 9f);
@@ -201,6 +230,7 @@ public class OverlayForm : Form
         _showStyleBar = false;
         Cursor = Cursors.Cross;
 
+        RefreshPluginArrowTools();
         ShowCaptureOverlay();
         UpdateSmartSelection(PointToClient(System.Windows.Forms.Cursor.Position));
         Invalidate();
@@ -577,6 +607,13 @@ public class OverlayForm : Form
             Invalidate();
         }
 
+        StyleAction hoveredStyle = HitTestStyleBar(e.Location)?.Action ?? StyleAction.None;
+        if (GetPluginArrowStyle(hoveredStyle) is null) hoveredStyle = StyleAction.None;
+        if (_hoveredPluginArrowStyle != hoveredStyle)
+        {
+            _hoveredPluginArrowStyle = hoveredStyle;
+            Invalidate();
+        }
         bool overStyleSlider = HitTestStyleSlider(e.Location) != StyleSliderKind.None;
         ArrowEditMode arrowHover = ArrowEditMode.None;
         bool overArrow = _activeTool is ToolbarAction.Arrow or ToolbarAction.None &&
@@ -1228,6 +1265,8 @@ public class OverlayForm : Form
 
     private void ReleaseCaptureSnapshot()
     {
+        _selectedArrow = null;
+        _workingAnnotation = null;
         _screen?.Dispose();
         _screen = null;
         DisposePixelatedScreens();
@@ -1236,6 +1275,10 @@ public class OverlayForm : Form
         _annotations.Clear();
         ClearAnnotationHistory();
         _precisionPoint = null;
+        _pluginArrowTools = [];
+        _pluginArrowIcons = [];
+        _activePluginArrow = null;
+        _hoveredPluginArrowStyle = StyleAction.None;
     }
 
     private void ResetSelection()
@@ -1306,7 +1349,7 @@ public class OverlayForm : Form
                 new PointF(point.X, point.Y),
                 color,
                 Math.Clamp(ConfigService.Current.AnnotationPenWidth, 0.5f, MaxCustomPenWidth),
-                ConfigService.Current.AnnotationArrowStyle),
+                ConfigService.Current.AnnotationArrowStyle) { PluginTool = _activePluginArrow },
             _ => throw new InvalidOperationException("The selected toolbar action is not drawable.")
         };
 
@@ -1369,6 +1412,7 @@ public class OverlayForm : Form
             InvalidateAnnotation(arrow);
         }
         _activeTool = ToolbarAction.Arrow;
+        _activePluginArrow = arrow.PluginTool;
         _showStyleBar = true;
         Invalidate(GetStyleBarBounds());
     }
@@ -1415,6 +1459,9 @@ public class OverlayForm : Form
         const float handleRadius = 11f;
         if (Distance(arrow.Start, point) <= handleRadius) return ArrowEditMode.Start;
         if (Distance(arrow.End, point) <= handleRadius) return ArrowEditMode.End;
+
+        if (arrow.PluginDrawing is { } drawing)
+            return drawing.HitTest(point, arrow.Width) ? ArrowEditMode.Move : ArrowEditMode.None;
 
         float dx = arrow.End.X - arrow.Start.X;
         float dy = arrow.End.Y - arrow.Start.Y;
@@ -2230,6 +2277,11 @@ public class OverlayForm : Form
     {
         float distance = Distance(arrow.Start, arrow.End);
         if (distance < 1f) return;
+        if (arrow.PluginDrawing is { } drawing)
+        {
+            drawing.Draw(graphics, arrow.Color, arrow.Width);
+            return;
+        }
 
         using var pen = new Pen(arrow.Color, arrow.Width)
         {
@@ -2324,6 +2376,12 @@ public class OverlayForm : Form
             case ArrowAnnotation arrow:
             {
                 float padding = Math.Max(34f, arrow.Width / 2f + 6f);
+                if (arrow.PluginDrawing is { } drawing)
+                {
+                    RectangleF bounds = drawing.Bounds;
+                    bounds.Inflate(padding, padding);
+                    return bounds;
+                }
                 return RectangleF.FromLTRB(
                     Math.Min(arrow.Start.X, arrow.End.X) - padding,
                     Math.Min(arrow.Start.Y, arrow.End.Y) - padding,
@@ -2875,13 +2933,15 @@ public class OverlayForm : Form
         int preferredWidth = _activeTool switch
         {
             ToolbarAction.Text => 620,
-            ToolbarAction.Arrow => 580,
+            ToolbarAction.Arrow => 580 + Math.Min(_pluginArrowTools.Length, 6) * 40,
             ToolbarAction.Pen => 580,
             ToolbarAction.Mosaic => 580,
             _ => 220
         };
         int width = Math.Min(preferredWidth, Math.Max(180, ClientSize.Width - 16));
         int height = _activeTool is ToolbarAction.Pen or ToolbarAction.Arrow or ToolbarAction.Mosaic ? 82 : 38;
+        if (_activeTool == ToolbarAction.Arrow)
+            height += (GetArrowStyleRows(width) - 1) * 34;
         Rectangle toolbar = GetToolbarBounds();
         int x = Math.Clamp(toolbar.Left, 8, Math.Max(8, ClientSize.Width - width - 8));
 
@@ -2894,6 +2954,9 @@ public class OverlayForm : Form
         y = Math.Clamp(y, 8, Math.Max(8, ClientSize.Height - height - 8));
         return new Rectangle(x, y, width, height);
     }
+
+    private static int GetArrowStyleColumns(int width) => Math.Max(1, (width - 100) / 40);
+    private int GetArrowStyleRows(int width) => (3 + _pluginArrowTools.Length + GetArrowStyleColumns(width) - 1) / GetArrowStyleColumns(width);
 
     private StyleButton[] GetStyleButtons()
     {
@@ -2932,12 +2995,17 @@ public class OverlayForm : Form
                 break;
             case ToolbarAction.Arrow:
                 AddPresets(StyleAction.SetPrimaryPreset, 6, 1, 2, 4, 8, 16, 32, 48);
-                Add(StyleAction.ArrowOpen, 54, 47, 36, 28);
-                Add(StyleAction.ArrowFilled, 94, 47, 36, 28);
-                Add(StyleAction.ArrowDouble, 134, 47, 36, 28);
-                int arrowPickerX = Math.Min(500, bounds.Width - 36);
-                AddColors(184, 47, Math.Clamp((arrowPickerX - 184) / 28, 0, 11));
-                AddColorPicker(Math.Max(184, arrowPickerX), 47);
+                int styleColumns = GetArrowStyleColumns(bounds.Width);
+                int styleCount = 3 + _pluginArrowTools.Length;
+                for (int i = 0; i < styleCount; i++)
+                    Add(i < 3 ? (StyleAction)((int)StyleAction.ArrowOpen + i) : (StyleAction)(PluginArrowStyleBase + i - 3),
+                        54 + i % styleColumns * 40, 47 + i / styleColumns * 34, 36, 28);
+                int lastRowCount = (styleCount - 1) % styleColumns + 1;
+                int colorStart = 64 + lastRowCount * 40;
+                int colorY = 47 + (GetArrowStyleRows(bounds.Width) - 1) * 34;
+                int arrowPickerX = Math.Min(500 + _pluginArrowTools.Length * 40, bounds.Width - 36);
+                AddColors(colorStart, colorY, Math.Clamp((arrowPickerX - colorStart) / 28, 0, 11));
+                AddColorPicker(arrowPickerX, colorY);
                 break;
             case ToolbarAction.Mosaic:
                 AddPresets(StyleAction.SetPrimaryPreset, 6, 8, 16, 24, 40, 60, 80);
@@ -3002,13 +3070,15 @@ public class OverlayForm : Form
             Color configuredColor = _selectedArrow?.Color ?? GetAnnotationColor();
                 foreach (StyleButton button in GetStyleButtons())
                 {
-                    bool active = button.Action switch
+                    bool active = GetPluginArrowStyle(button.Action) is { } pluginStyle
+                        ? ReferenceEquals(SelectedPluginArrow, pluginStyle)
+                        : button.Action switch
                     {
                         StyleAction.Bold => configuredFontStyle.HasFlag(FontStyle.Bold),
                         StyleAction.Italic => configuredFontStyle.HasFlag(FontStyle.Italic),
-                        StyleAction.ArrowOpen => (_selectedArrow?.Style ?? ConfigService.Current.AnnotationArrowStyle) == AnnotationArrowStyle.Open,
-                        StyleAction.ArrowFilled => (_selectedArrow?.Style ?? ConfigService.Current.AnnotationArrowStyle) == AnnotationArrowStyle.Filled,
-                        StyleAction.ArrowDouble => (_selectedArrow?.Style ?? ConfigService.Current.AnnotationArrowStyle) == AnnotationArrowStyle.Double,
+                        StyleAction.ArrowOpen => SelectedPluginArrow is null && (_selectedArrow?.Style ?? ConfigService.Current.AnnotationArrowStyle) == AnnotationArrowStyle.Open,
+                        StyleAction.ArrowFilled => SelectedPluginArrow is null && (_selectedArrow?.Style ?? ConfigService.Current.AnnotationArrowStyle) == AnnotationArrowStyle.Filled,
+                        StyleAction.ArrowDouble => SelectedPluginArrow is null && (_selectedArrow?.Style ?? ConfigService.Current.AnnotationArrowStyle) == AnnotationArrowStyle.Double,
                         StyleAction.SetPrimaryPreset => IsPrimaryPresetActive(button.Value),
                         StyleAction.SetSecondaryPreset => Math.Abs(ConfigService.Current.AnnotationMosaicPixelSize - button.Value) < 0.1f,
                         _ when IsColorAction(button.Action) => ColorsEqual(configuredColor, GetStyleColor(button.Action)),
@@ -3037,6 +3107,11 @@ public class OverlayForm : Form
             _styleBarRenderKey = renderKey;
         }
         _styleBarLayer.Draw(graphics, bounds.Location);
+        if (GetPluginArrowStyle(_hoveredPluginArrowStyle) is { } hoveredStyle)
+        {
+            StyleButton button = GetStyleButtons().First(item => item.Action == _hoveredPluginArrowStyle);
+            DrawOverlayTooltip(graphics, bounds, button.Bounds, hoveredStyle.Definition.Label, palette);
+        }
     }
 
     private int GetStyleBarRenderKey(Rectangle bounds, ThemePalette palette)
@@ -3044,6 +3119,8 @@ public class OverlayForm : Form
         var hash = new HashCode();
         hash.Add(bounds.Size);
         hash.Add(_activeTool);
+        hash.Add(SelectedPluginArrow);
+        hash.Add(_pluginArrowTools.Length);
         hash.Add(palette.CardBg.ToArgb());
         hash.Add(palette.CardBorder.ToArgb());
         hash.Add(palette.TextPrimary.ToArgb());
@@ -3121,12 +3198,21 @@ public class OverlayForm : Form
             y + 9f);
     }
 
-    private static void DrawStyleButtonContent(
+    private void DrawStyleButtonContent(
         SKCanvas canvas,
         StyleButton button,
         Color color,
         ThemePalette palette)
     {
+        int pluginIndex = (int)button.Action - PluginArrowStyleBase;
+        if (pluginIndex >= 0 && pluginIndex < _pluginArrowIcons.Length && _pluginArrowIcons[pluginIndex] is { } icon)
+        {
+            canvas.Save();
+            canvas.Translate(button.Bounds.Left + 9, button.Bounds.Top + 5);
+            icon.Draw(canvas, color, 1.5f);
+            canvas.Restore();
+            return;
+        }
         if (button.Action == StyleAction.ColorCustom)
         {
             Color[] choices = [Color.Red, Color.Orange, Color.Yellow, Color.LimeGreen,
@@ -3230,6 +3316,14 @@ public class OverlayForm : Form
     private void ExecuteStyleAction(StyleButton button)
     {
         StyleAction action = button.Action;
+        if (GetPluginArrowStyle(action) is { } pluginStyle)
+        {
+            _activePluginArrow = pluginStyle;
+            UpdateSelectedArrow(arrow => arrow.PluginTool = pluginStyle);
+            _styleBarRenderKey = int.MinValue;
+            Invalidate(GetStyleBarBounds());
+            return;
+        }
         switch (action)
         {
             case StyleAction.SetPrimaryPreset when _activeTool == ToolbarAction.Mosaic:
@@ -3294,8 +3388,9 @@ public class OverlayForm : Form
 
     private void SetArrowStyle(AnnotationArrowStyle style)
     {
+        _activePluginArrow = null;
         ConfigService.Current.AnnotationArrowStyle = style;
-        UpdateSelectedArrow(arrow => arrow.Style = style);
+        UpdateSelectedArrow(arrow => { arrow.Style = style; arrow.PluginTool = null; });
     }
 
     private void UpdateSelectedArrow(Action<ArrowAnnotation> update)
@@ -3655,11 +3750,16 @@ public class OverlayForm : Form
         ToolbarButton hovered = GetToolbarButtons().FirstOrDefault(button => button.Action == _hoveredAction);
         if (hovered.Action == ToolbarAction.None || string.IsNullOrEmpty(hovered.Tooltip)) return;
 
+        DrawOverlayTooltip(graphics, toolbarBounds, hovered.Bounds, hovered.Tooltip, palette);
+    }
+
+    private void DrawOverlayTooltip(Graphics graphics, Rectangle toolbarBounds, Rectangle anchor, string text, ThemePalette palette)
+    {
         using var font = new Font("Microsoft YaHei UI", 8.5f, FontStyle.Regular);
-        Size textSize = TextRenderer.MeasureText(graphics, hovered.Tooltip, font, Size.Empty, TextFormatFlags.NoPadding);
+        Size textSize = TextRenderer.MeasureText(graphics, text, font, Size.Empty, TextFormatFlags.NoPadding);
         int width = textSize.Width + 18;
         int height = textSize.Height + 10;
-        int x = hovered.Bounds.Left + hovered.Bounds.Width / 2 - width / 2;
+        int x = anchor.Left + anchor.Width / 2 - width / 2;
         x = Math.Clamp(x, 6, Math.Max(6, ClientSize.Width - width - 6));
 
         bool toolbarIsBelowSelection = toolbarBounds.Top >= _selection.Bottom;
@@ -3676,7 +3776,7 @@ public class OverlayForm : Form
         graphics.DrawPath(outline, path);
         TextRenderer.DrawText(
             graphics,
-            hovered.Tooltip,
+            text,
             font,
             tooltipBounds,
             palette.TextPrimary,
@@ -3778,12 +3878,12 @@ public class OverlayForm : Form
     private readonly record struct StyleButton(StyleAction Action, Rectangle Bounds, float Value = 0f);
 
     private sealed record AnnotationChange(Action Undo, Action Redo);
-    private readonly record struct ArrowState(PointF Start, PointF End, Color Color, float Width, AnnotationArrowStyle Style)
+    private readonly record struct ArrowState(PointF Start, PointF End, Color Color, float Width, AnnotationArrowStyle Style, PluginArrowToolInfo? PluginTool)
     {
-        public static ArrowState From(ArrowAnnotation arrow) => new(arrow.Start, arrow.End, arrow.Color, arrow.Width, arrow.Style);
+        public static ArrowState From(ArrowAnnotation arrow) => new(arrow.Start, arrow.End, arrow.Color, arrow.Width, arrow.Style, arrow.PluginTool);
         public void Apply(ArrowAnnotation arrow)
         {
-            arrow.Start = Start; arrow.End = End; arrow.Color = Color; arrow.Width = Width; arrow.Style = Style;
+            arrow.Start = Start; arrow.End = End; arrow.Color = Color; arrow.Width = Width; arrow.Style = Style; arrow.PluginTool = PluginTool;
         }
     }
 
@@ -3817,6 +3917,23 @@ public class OverlayForm : Form
         public Color Color { get; set; } = color;
         public float Width { get; set; } = width;
         public AnnotationArrowStyle Style { get; set; } = style;
+        public PluginArrowToolInfo? PluginTool { get; set; }
+        private (PointF Start, PointF End, float Width, PluginArrowToolInfo Tool)? _geometryKey;
+        private PluginArrowDrawing? _drawing;
+        public PluginArrowDrawing? PluginDrawing
+        {
+            get
+            {
+                if (PluginTool is null || Distance(Start, End) < 1f) return null;
+                var key = (Start, End, Width, PluginTool);
+                if (_geometryKey != key)
+                {
+                    _geometryKey = key;
+                    _drawing = PluginArrowDrawing.Build(PluginTool, Start, End, Width);
+                }
+                return _drawing;
+            }
+        }
     }
 
     private sealed class TextAnnotation(

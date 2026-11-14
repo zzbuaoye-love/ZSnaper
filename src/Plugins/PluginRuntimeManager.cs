@@ -193,6 +193,11 @@ public sealed class PluginRuntimeManager : IDisposable
             new PluginActionInfo(pair.Key, item.Definition)))
             .OrderBy(item => item.Item.Order).ToArray();
 
+    public IReadOnlyList<PluginArrowToolInfo> GetArrowTools() =>
+        _running.Values.SelectMany(plugin => plugin.Host.OverlayApi.Tools)
+            .OrderBy(tool => tool.Definition.Order).ThenBy(tool => tool.PluginId, StringComparer.Ordinal)
+            .ThenBy(tool => tool.Definition.Id, StringComparer.Ordinal).ToArray();
+
     public async Task<PluginOperationResult> RunActionAsync(string pluginId, string actionId)
     {
         if (_latest is null) return new(false, "还没有可供插件处理的截图。");

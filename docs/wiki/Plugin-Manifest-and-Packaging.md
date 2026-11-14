@@ -40,7 +40,7 @@ The [demo manifest](https://github.com/zzbuaoye-love/ZSnaper/blob/main/samples/E
 | `id` | 2–128 characters: starts with an ASCII letter or digit, followed by letters, digits, `.`, `_`, or `-`. Unique installation identity. |
 | `name`, `description`, `version` | Display name, optional description, and a supported semantic version. The entry class must report the same `id` and `version`. |
 | `entry.assembly`, `entry.type` | Relative DLL path in the package and fully qualified .NET type implementing `IZSnaperPlugin`. |
-| `requires.pluginApi`, `requires.appVersion` | Version ranges checked at install and enable. The current API is `1.0.0`; use `>=1.0.0 <2.0.0` for this major version. Ranges support comparison clauses, `^`, `~`, and `||`. |
+| `requires.pluginApi`, `requires.appVersion` | Version ranges checked at install and enable. The current API is `1.1.0`; use `>=1.0.0 <2.0.0` for API 1.0 features or `>=1.1.0 <2.0.0` for overlay arrow tools. Ranges support comparison clauses, `^`, `~`, and `||`. |
 | `requires.hostApis` | Descriptive list of APIs the plugin uses. It is not currently a permission or capability gate. |
 | `lifecycle`, `scope` | Optional descriptive metadata with defaults in the contract. They do not independently schedule execution or subscribe to events; plugin code must do that. |
 | `update` | Optional `checkUrl` (HTTPS), `channel`, and `autoCheck` fields. See [Plugin updates](https://github.com/zzbuaoye-love/ZSnaper/wiki/Plugin-Updates). |

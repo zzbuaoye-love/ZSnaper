@@ -9,7 +9,7 @@ namespace ZSnaper.Plugins;
 public static class PluginContract
 {
     public const int ManifestVersion = 1;
-    public const string ApiVersion = "1.0.0";
+    public const string ApiVersion = "1.1.0";
     public const string PackageExtension = ".zsp";
     public const string ManifestFileName = "manifest.json";
 }

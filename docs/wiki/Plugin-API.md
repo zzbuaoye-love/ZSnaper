@@ -1,4 +1,4 @@
-# Plugin API 1.0.0
+# Plugin API 1.1.0
 
 Reference [`ZSnaper.Plugin.Abstractions.csproj`](https://github.com/zzbuaoye-love/ZSnaper/blob/main/src/Plugin.Abstractions/ZSnaper.Plugin.Abstractions.csproj), target `net8.0`, and implement `IZSnaperPlugin`. The complete signatures are in [`PluginContracts.cs`](https://github.com/zzbuaoye-love/ZSnaper/blob/main/src/Plugin.Abstractions/PluginContracts.cs). See the [demo source](https://github.com/zzbuaoye-love/ZSnaper/tree/main/samples/Example.Plugin) for a working implementation.
 
@@ -29,3 +29,17 @@ The host compares the instance's `Manifest.Id` and `Manifest.Version` with the p
 Register an action with a `PluginToolbarItemDefinition` (`Id`, `Label`, optional `Icon`, `Tooltip`, `Order`) and a `PluginToolbarActionHandler`. IDs must be 1–64 letters, digits, underscores, or hyphens; labels must be 1–40 non-whitespace characters. IDs must be unique within that plugin. Registered actions appear under **上次截图的插件动作** on the **插件管理** page after a screenshot. They are not injected into the capture overlay. `Register` returns a `PluginToolbarRegistration` whose `Id` is passed to `Unregister`.
 
 The host loads plugin assemblies from streams, so `Assembly.Location` may be empty. Include any dependencies in the package and embed runtime assets or resolve them deliberately; do not assume the assembly location points to a file.
+
+## Capture overlay arrow tools (1.1)
+
+API 1.0 plugins remain compatible. API 1.1 adds the optional `IZSnaperOverlayHost` capability, defined in [PluginOverlayContracts.cs](https://github.com/zzbuaoye-love/ZSnaper/blob/main/src/Plugin.Abstractions/PluginOverlayContracts.cs). Cast the supplied host to this interface and use `Overlay.RegisterArrow(definition, renderer)` in `EnableAsync`; call `Overlay.UnregisterArrow(registration.Id)` in `DisableAsync`. Require `pluginApi: ">=1.1.0 <2.0.0"` in the manifest so older hosts reject the plugin before loading it.
+
+`PluginArrowToolDefinition` supplies `Id`, `Label` and `Order`. IDs follow the same rules as post-capture actions and must be unique within the plugin. Registered styles appear after the three native styles in the existing arrow settings panel; the main capture toolbar keeps its original arrow button. The host takes a style snapshot when starting a capture; registration changes apply to subsequent captures. Selecting a style also changes the selected arrow and participates in undo/redo.
+
+`PluginArrowRenderer` accepts a `PluginArrowContext` with `Start`, `End` (`PluginPoint`) and stroke `Width`, all in image pixels. Return one or more `PluginArrowPath` objects, each with `Points`, `Closed` and `Filled`. Paths are polylines; filled paths must be closed. Return 1–64 paths with 2–4096 finite points each. Keep this synchronous callback fast and deterministic: it runs on the UI thread and must not perform I/O or retain host objects. The host copies returned points, uses the selected annotation color, and caches geometry until endpoints or width change. Callback failures or invalid geometry are logged and fall back to a native arrow.
+
+The host handles style panel layout and icons, drag drawing, geometry hit-testing, endpoint/body editing, colors, width, deletion, undo/redo, and final screenshot rendering. This API currently extends arrows only; it does not expose arbitrary controls or replace the capture overlay.
+
+See [ArrowTools.Plugin](https://github.com/zzbuaoye-love/ZSnaper/tree/main/samples/ArrowTools.Plugin) for a complete plugin that registers hollow and elbow arrows without referencing the host assembly.
+
+For ready-to-install packages and the matching API 1.1 host, see [Arrow Tools demo](https://github.com/zzbuaoye-love/ZSnaper/wiki/Arrow-Tools-Demo).

@@ -15,6 +15,8 @@ Start with the [runnable Example.Plugin](../../samples/Example.Plugin/README.md)
 
 The resulting `samples/Example.Plugin/dist/Example.Plugin.zsp` contains `manifest.json` and `Example.Plugin.dll` at the package root. Install it from the plugin page, enable it, take a screenshot, then use **记录截图信息** or **保存截图副本** under **上次截图的插件动作**. These actions are on the plugin page after capture, not on the overlay.
 
+For arrow styles directly in the screenshot overlay's existing arrow settings, see [ArrowTools.Plugin](../../samples/ArrowTools.Plugin/README.md). It uses API 1.1's optional `IZSnaperOverlayHost.Overlay` capability to register hollow and elbow arrows, including native editing and undo/redo.
+
 The public contract is [PluginContracts.cs](../Plugin.Abstractions/PluginContracts.cs). The versioned Wiki source in [docs/wiki](../../docs/wiki/Home.md) documents the [Plugin API](../../docs/wiki/Plugin-API.md), [manifest and package](../../docs/wiki/Plugin-Manifest-and-Packaging.md), and [update metadata](../../docs/wiki/Plugin-Updates.md). It is also published to the [GitHub Wiki](https://github.com/zzbuaoye-love/ZSnaper/wiki).
 
 Installed packages are under `%APPDATA%\ZSnaper\Plugins\installed`; errors go to `%LOCALAPPDATA%\ZSnaper\Logs`. Enabled plugins are loaded at app startup. `Assembly.Location` can be empty because plugin assemblies are loaded from streams; embed assets or use a deliberate package-relative path instead of relying on it.

@@ -590,7 +590,8 @@ internal static partial class Program
 
         var configInvalid = new AppConfig { UpdateChannel = "invalid_channel_xyz" };
         AppConfigSanitizer.Normalize(configInvalid);
-        Assert(configInvalid.UpdateChannel == "Beta", "Invalid channel was not defaulted to Beta.");
+        Assert(configInvalid.UpdateChannel == "Release", "Invalid channel was not defaulted to Release.");
+        Assert(new AppConfig().UpdateChannel == "Release", "A new configuration should use the Release channel.");
 
         // 2. ChannelSegmentedControl mapping
         Assert(ChannelSegmentedControl.ChannelToIndex("Release") == 0, "Release did not map to index 0.");
@@ -607,11 +608,19 @@ internal static partial class Program
         Assert(control.Width == 136 && control.Height == 28, "ChannelSegmentedControl size is incorrect.");
 
         // 4. AppVersionInfo build channel and version
-        Assert(AppVersionInfo.Version == "0.0.6", "AppVersionInfo.Version should be 0.0.6.");
-        Assert(AppVersionInfo.DisplayVersion == "0.0.6-beta", $"AppVersionInfo.DisplayVersion expected 0.0.6-beta, got {AppVersionInfo.DisplayVersion}.");
-        Assert(AppVersionInfo.BuildChannel == "Beta", "AppVersionInfo.BuildChannel should be Beta for prerelease build.");
-        Assert(AppVersionInfo.WelcomeChannelLabel == "BETA", "AppVersionInfo.WelcomeChannelLabel should be BETA.");
-        Assert(!AppVersionInfo.IsReleaseBuild, "Prerelease build was identified as Release.");
+        Assert(AppVersionInfo.Version == "1.0.0", "AppVersionInfo.Version should be 1.0.0.");
+        Assert(AppVersionInfo.DisplayVersion == "1.0.0", $"Unexpected display version: {AppVersionInfo.DisplayVersion}.");
+        Assert(AppVersionInfo.BuildChannel == "Release" && AppVersionInfo.IsReleaseBuild,
+            "The stable build should identify as Release.");
+        Assert(AppVersionInfo.WelcomeChannelLabel is null, "The stable build should have no beta label.");
+
+        var demo = new GitHubRelease { TagName = "arrow-tools-demo-v1.0.0", IsPrerelease = true };
+        var beta = new GitHubRelease { TagName = "v0.0.6-beta", IsPrerelease = true };
+        var stable = new GitHubRelease { TagName = "v1.0.0" };
+        Assert(VersionGet.SelectAppRelease([demo, beta]) == beta, "The plugin demo displaced the latest app release.");
+        Assert(VersionGet.IsNewerAppRelease(stable, "0.0.6-beta"), "The previous beta should see the stable release.");
+        Assert(VersionGet.IsNewerAppRelease(stable, "1.0.0-beta"), "A same-version beta should see the stable release.");
+        Assert(!VersionGet.IsNewerAppRelease(stable, "1.0.0"), "The installed stable build should be up to date.");
     }
 
     private static void TestToolbarItemOrderAndRepair()

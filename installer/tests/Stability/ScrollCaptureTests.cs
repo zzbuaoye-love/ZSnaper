@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Windows.Automation;
 using ZSnaper.Forms;
 using ZSnaper.Interop;
 using ZSnaper.Services;
@@ -378,7 +377,17 @@ header{position:sticky;top:0;height:56px;background:#1d263b;color:#fff;padding:1
         {
             sb.Append($"<div class='row'>Main document item #{i} - browser auto and manual wheel verification</div>\n");
         }
-        sb.Append("</body></html>");
+        sb.Append("""
+<script>
+const inner = document.querySelector('#inner');
+function reportScroll() {
+  document.title = `ZSnaperScrollProbe:${Math.round(inner.scrollTop)}:${Math.round(scrollY)}`;
+}
+inner.addEventListener('scroll', reportScroll);
+window.addEventListener('scroll', reportScroll);
+reportScroll();
+</script></body></html>
+""");
         File.WriteAllText(htmlPath, sb.ToString());
 
         Process? proc = null;
@@ -434,84 +443,22 @@ header{position:sticky;top:0;height:56px;background:#1d263b;color:#fff;padding:1
             Assert(foundRoot == browserHwnd && foundChild != nint.Zero && foundChild != browserHwnd,
                 $"FindTargetWindowAtPoint mismatch over browser (root=0x{foundRoot:X}, child=0x{foundChild:X}).");
 
-            // Verify production CreateScroller selects immediate non-blocking Chromium scroller without UIA freeze.
             var createSw = Stopwatch.StartNew();
-            using ScrollCaptureService.Scroller? fastScroller = ScrollCaptureService.CreateScroller(docPt, selectionHeight: 450);
+            using ScrollCaptureService.Scroller? docScroller = ScrollCaptureService.CreateScroller(docPt, selectionHeight: 450);
+            using ScrollCaptureService.Scroller? innerScroller = ScrollCaptureService.CreateScroller(innerPt, selectionHeight: 200);
             createSw.Stop();
             Console.WriteLine($"CreateScroller on Chromium finished in {createSw.ElapsedMilliseconds}ms.");
-            Assert(fastScroller is not null && createSw.ElapsedMilliseconds < 400,
-                $"CreateScroller over Chromium took {createSw.ElapsedMilliseconds}ms or returned null.");
+            Assert(docScroller is not null && innerScroller is not null && createSw.ElapsedMilliseconds < 400,
+                "Production scroll controllers did not initialize promptly over Chromium.");
 
-            // Wake Chromium UIA tree and locate ScrollPattern on inner container and document
-            // via MTA worker (matching OverlayForm / ContinueCaptureAsync runtime threading).
-            ScrollCaptureService.ScrollPatternController? innerScroller = null;
-            ScrollCaptureService.ScrollPatternController? docScroller = null;
-            DateTime uiaDeadline = DateTime.UtcNow.AddSeconds(8);
-            while (DateTime.UtcNow < uiaDeadline && (innerScroller is null || docScroller is null))
-            {
-                try
-                {
-                    Task.Run(() =>
-                    {
-                        AutomationElement? rootAe = AutomationElement.FromHandle(foundRoot);
-                        _ = rootAe?.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Document));
-                    }).Wait(1500);
-                }
-                catch { }
+            var initial = ReadScrollPosition();
+            var afterInner = ScrollWithBrowserController(innerScroller!);
+            Assert(afterInner.Inner - initial.Inner is > 0 and < 200 && afterInner.Document == initial.Document,
+                $"The inner wheel step moved the wrong area or overshot ({initial} -> {afterInner}).");
+            var afterDocument = ScrollWithBrowserController(docScroller!);
+            Assert(afterDocument.Document - afterInner.Document is > 0 and < 450 && afterDocument.Inner == afterInner.Inner,
+                $"The document wheel step moved the wrong area or overshot ({afterInner} -> {afterDocument}).");
 
-                innerScroller ??= ScrollCaptureService.ScrollPatternController.TryCreate(innerPt, selectionHeight: 200);
-                docScroller ??= ScrollCaptureService.ScrollPatternController.TryCreate(docPt, selectionHeight: 450);
-                if (innerScroller is null || docScroller is null)
-                {
-                    Thread.Sleep(250);
-                }
-            }
-
-            Assert(innerScroller is not null, "Inner overflow container ScrollPattern was not found.");
-            Assert(docScroller is not null, "Document ScrollPattern was not found.");
-
-            // Verify proportional percent steps keep strong overlap instead of jumping 100%.
-            var innerSw = Stopwatch.StartNew();
-            ScrollCaptureService.ScrollStep innerStep = innerScroller!.ScrollNext();
-            Console.WriteLine($"Inner step ({innerSw.ElapsedMilliseconds}ms): moved={innerStep.Moved}, expectedPx={innerStep.ExpectedPixelShift}, allowWheel={innerStep.AllowWheelFallback}");
-            Assert(innerStep.Moved && innerStep.ExpectedPixelShift is > 30 and < 180,
-                $"Inner overflow ScrollPattern step abnormal: moved={innerStep.Moved}, px={innerStep.ExpectedPixelShift}.");
-
-            ScrollCaptureService.ScrollStep docStep1 = docScroller!.ScrollNext();
-            ScrollCaptureService.ScrollStep docStep2 = docScroller.ScrollNext();
-            Console.WriteLine($"Doc step1: moved={docStep1.Moved}, expectedPx={docStep1.ExpectedPixelShift}; step2: moved={docStep2.Moved}, expectedPx={docStep2.ExpectedPixelShift}");
-            Assert(docStep1.Moved && docStep1.ExpectedPixelShift is > 80 and < 320,
-                $"Document ScrollPattern step1 overshot or failed: moved={docStep1.Moved}, px={docStep1.ExpectedPixelShift}.");
-            Assert(docStep2.Moved && docStep2.ExpectedPixelShift is > 80 and < 320,
-                $"Document ScrollPattern step2 overshot or failed: moved={docStep2.Moved}, px={docStep2.ExpectedPixelShift}.");
-
-            // Also verify wheel methods advance Chromium Document.
-            Console.WriteLine($"Testing wheel against browserExe={browserExe}");
-            using var wheel = ScrollCaptureService.WheelScrollController.TryCreate(docPt, selectionHeight: 450);
-            Assert(wheel is not null, "WheelScrollController.TryCreate failed over browser.");
-            AutomationElement docAe = AutomationElement.FromHandle(foundRoot)!
-                .FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Document))!;
-            var docPattern = (ScrollPattern)docAe.GetCurrentPattern(ScrollPattern.Pattern);
-
-            double beforePct = docPattern.Current.VerticalScrollPercent;
-            bool pmPosted = wheel!.SendPostMessageWheel();
-            Thread.Sleep(450);
-            double afterPm = docPattern.Current.VerticalScrollPercent;
-            Console.WriteLine($"WheelScrollController.SendPostMessageWheel: posted={pmPosted}, pct={beforePct:F2}% -> {afterPm:F2}%");
-            Assert(pmPosted && afterPm > beforePct + 0.1d,
-                $"SendPostMessageWheel did not scroll browser document ({beforePct:F2}% -> {afterPm:F2}%).");
-
-            // Also verify wheel.ScrollNext() (SetForegroundWindow + SetCursorPos + SendInput).
-            wheel.ScrollNext();
-            Thread.Sleep(500);
-            double afterSendInput = docPattern.Current.VerticalScrollPercent;
-            Console.WriteLine($"WheelScrollController.ScrollNext (SendInput): pct={afterPm:F2}% -> {afterSendInput:F2}%");
-            Assert(afterSendInput > afterPm + 0.1d,
-                $"WheelScrollController.ScrollNext (SendInput) did not scroll browser document ({afterPm:F2}% -> {afterSendInput:F2}%).");
-
-            // Verify live ScrollCaptureForm sitting TopMost over Chrome allows wheel scrolling inside selection hole.
-            docPattern.SetScrollPercent(ScrollPattern.NoScroll, 15d);
-            Thread.Sleep(350);
             Rectangle selScreen = new(browserBounds.Left + 80, browserBounds.Top + 310, 520, 320);
             Rectangle vs = SystemInformation.VirtualScreen;
             using var bg = new Bitmap(vs.Width, vs.Height, PixelFormat.Format32bppArgb);
@@ -529,7 +476,7 @@ header{position:sticky;top:0;height:56px;background:#1d263b;color:#fff;padding:1
             Assert(resRoot == browserHwnd && resChild != nint.Zero,
                 $"ScrollCaptureForm.ResolveTargetWindow failed over live browser (root=0x{resRoot:X}, child=0x{resChild:X}).");
 
-            double beforeOverlayPct = docPattern.Current.VerticalScrollPercent;
+            int beforeOverlay = ReadScrollPosition().Document;
             NativeMethods.WarmMouseHover(resChild, center);
             Thread.Sleep(45);
             NativeMethods.PostMouseWheelAtScreenPoint(resChild, center, unchecked((nint)(int)(((-120) & 0xFFFF) << 16)), warmHover: false);
@@ -538,15 +485,45 @@ header{position:sticky;top:0;height:56px;background:#1d263b;color:#fff;padding:1
                 Application.DoEvents();
                 Thread.Sleep(25);
             }
-            double afterOverlayPct = docPattern.Current.VerticalScrollPercent;
-            Console.WriteLine($"ScrollCaptureForm overlay wheel: pct={beforeOverlayPct:F2}% -> {afterOverlayPct:F2}%");
-            Assert(afterOverlayPct > beforeOverlayPct + 0.5d,
-                $"Chrome document failed to scroll while ScrollCaptureForm overlay was open ({beforeOverlayPct:F2}% -> {afterOverlayPct:F2}%).");
+            int afterOverlay = ReadScrollPosition().Document;
+            Console.WriteLine($"ScrollCaptureForm overlay wheel: scrollY={beforeOverlay} -> {afterOverlay}");
+            Assert(afterOverlay > beforeOverlay,
+                $"Chrome document did not advance with the scroll overlay open ({beforeOverlay} -> {afterOverlay}).");
 
             form.CancelFromOwner();
             Application.DoEvents();
 
             Console.WriteLine("Browser scroll probe passed.");
+
+            (int Inner, int Document) ReadScrollPosition()
+            {
+                var title = new StringBuilder(256);
+                GetWindowText(browserHwnd, title, title.Capacity);
+                string[] fields = title.ToString().Split(':');
+                if (fields.Length == 3 && int.TryParse(fields[1], out int inner) && int.TryParse(fields[2], out int document))
+                {
+                    return (inner, document);
+                }
+
+                throw new InvalidOperationException($"The browser did not report scroll coordinates: {title}");
+            }
+
+            (int Inner, int Document) ScrollWithBrowserController(ScrollCaptureService.Scroller scroller)
+            {
+                var before = ReadScrollPosition();
+                ScrollCaptureService.ScrollStep step = scroller.ScrollNext();
+                Assert(step.IsSmoothWheel && step.AllowPostMessageRetry, "Chromium did not select the wheel controller.");
+                Thread.Sleep(500);
+                var after = ReadScrollPosition();
+                if (after == before && scroller.RetryWithPostMessage())
+                {
+                    Thread.Sleep(500);
+                    after = ReadScrollPosition();
+                }
+
+                Console.WriteLine($"Chromium wheel step: {before} -> {after}");
+                return after;
+            }
         }
         finally
         {

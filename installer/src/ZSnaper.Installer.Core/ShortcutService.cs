@@ -18,11 +18,11 @@ public static class ShortcutService
         }
 
         Type shellType = Type.GetTypeFromProgID("WScript.Shell")
-            ?? throw new InvalidOperationException("Windows Shell 快捷方式组件不可用。");
+            ?? throw new InvalidOperationException("Windows Shell 快捷方式组件不可用");
         object? shell = Activator.CreateInstance(shellType);
         if (shell is null)
         {
-            throw new InvalidOperationException("无法创建 Windows Shell 快捷方式对象。");
+            throw new InvalidOperationException("无法创建 Windows Shell 快捷方式对象");
         }
 
         object? shortcut = null;
@@ -36,7 +36,7 @@ public static class ShortcutService
                 args: [shortcutPath]);
             if (shortcut is null)
             {
-                throw new InvalidOperationException("无法创建快捷方式。");
+                throw new InvalidOperationException("无法创建快捷方式");
             }
 
             Type shortcutType = shortcut.GetType();

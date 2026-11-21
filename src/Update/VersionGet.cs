@@ -153,7 +153,7 @@ public static class VersionGet
                 };
             }
 
-            bool hasUpdate = CompareVersions(latestRelease.CleanVersion, currentVer) > 0;
+            bool hasUpdate = IsNewerAppRelease(latestRelease, AppVersionInfo.DisplayVersion);
 
             return new UpdateCheckResult
             {
@@ -218,12 +218,24 @@ public static class VersionGet
 
             response.EnsureSuccessStatusCode();
             string json = await response.Content.ReadAsStringAsync(cancellationToken);
-            return JsonSerializer.Deserialize<GitHubRelease>(json);
+            GitHubRelease? release = JsonSerializer.Deserialize<GitHubRelease>(json);
+            return release is null ? null : SelectAppRelease([release]);
         }
 
         // 获取全部 Releases 列表，查找最新的有效非草稿版本
         var allReleases = await GetAllReleasesAsync(cancellationToken);
-        return allReleases.FirstOrDefault(r => !r.IsDraft);
+        return SelectAppRelease(allReleases);
+    }
+
+    internal static GitHubRelease? SelectAppRelease(IEnumerable<GitHubRelease> releases) =>
+        releases.FirstOrDefault(release => !release.IsDraft && Regex.IsMatch(
+            release.TagName, @"^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$", RegexOptions.IgnoreCase));
+
+    internal static bool IsNewerAppRelease(GitHubRelease release, string installedVersion)
+    {
+        int comparison = CompareVersions(release.CleanVersion, installedVersion);
+        return comparison > 0 ||
+               (comparison == 0 && !release.IsPrerelease && installedVersion.Contains('-'));
     }
 
     /// <summary>

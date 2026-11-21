@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using Avalonia;
 using ZSnaper.Installer.Core;
@@ -7,7 +8,9 @@ namespace ZSnaper.FullInstaller;
 
 internal static class Program
 {
-    public const string Version = "0.0.6-beta";
+    public static string Version { get; } = typeof(Program).Assembly
+        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()!
+        .InformationalVersion.Split('+', 2)[0];
     internal static string? PayloadDirectory { get; private set; }
     internal static string InstallerExecutable { get; private set; } = string.Empty;
 

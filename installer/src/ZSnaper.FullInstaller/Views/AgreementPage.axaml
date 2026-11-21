@@ -7,7 +7,7 @@
       <StackPanel Spacing="4">
         <TextBlock Text="STEP 01 / 03" Foreground="#34D399" FontSize="11" FontWeight="Bold" />
         <TextBlock Text="使用协议与说明" Classes="h1" />
-        <TextBlock Text="请阅读使用说明，然后勾选同意以继续配置安装。" Classes="muted" />
+        <TextBlock Text="请阅读使用说明，然后勾选同意以继续配置安装" Classes="muted" />
       </StackPanel>
 
       <!-- 步骤指示胶囊 -->
@@ -25,7 +25,7 @@
           <StackPanel Spacing="10">
             <TextBlock Text="ZSnaper 开源协议与使用规范" FontWeight="Bold" Foreground="White" FontSize="13" />
             <TextBlock Classes="body" TextWrapping="Wrap" LineHeight="22" FontSize="12.5" Foreground="#CBD5E1"
-                       Text="1. ZSnaper 是一款专为 Windows 设计的高性能截图、本地离线 OCR 与画板标注效率工具。&#x0a;&#x0a;2. 【纯净独立】安装向导只会将程序文件写入你指定的安装目录，绝不夹带任何第三方推广或静默组件。&#x0a;&#x0a;3. 【用户数据安全】所有偏好设置与历史记录独立存放于 %APPDATA%\ZSnaper，卸载程序默认保留这些配置，方便未来平滑升级与重装。&#x0a;&#x0a;4. 【开源与许可】本项目基于 GPL-3.0 协议开源，请在遵守当地法律法规的前提下使用。" />
+                       Text="1. ZSnaper 是一款专为 Windows 设计的高性能截图、本地离线 OCR 与画板标注效率工具&#x0a;&#x0a;2. 【纯净独立】安装向导只会将程序文件写入你指定的安装目录，绝不夹带任何第三方推广或静默组件&#x0a;&#x0a;3. 【用户数据安全】所有偏好设置与历史记录独立存放于 %APPDATA%\ZSnaper，卸载程序默认保留这些配置，方便未来平滑升级与重装&#x0a;&#x0a;4. 【开源与许可】本项目基于 GPL-3.0 协议开源，请在遵守当地法律法规的前提下使用" />
           </StackPanel>
         </ScrollViewer>
       </Border>

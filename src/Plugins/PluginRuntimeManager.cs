@@ -38,7 +38,7 @@ public sealed class PluginRuntimeManager : IDisposable
             InstalledPlugin plugin = _installer.Install(packagePath);
             Changed?.Invoke();
             AppDiagnostics.LogMessage("Plugin.Install", $"Id={plugin.Manifest.Id}; Version={plugin.Manifest.Version}");
-            return new(true, $"已安装 {plugin.Manifest.Name}。启用后才会运行插件代码。");
+            return new(true, $"已安装 {plugin.Manifest.Name}，启用后才会运行插件代码");
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException or ArgumentException)
         {
@@ -58,18 +58,18 @@ public sealed class PluginRuntimeManager : IDisposable
         await _gate.WaitAsync();
         try
         {
-            if (_disposed) return new(false, "插件管理器已关闭。");
-            if (_running.ContainsKey(id)) return new(true, "插件已启用。");
+            if (_disposed) return new(false, "插件管理器已关闭");
+            if (_running.ContainsKey(id)) return new(true, "插件已启用");
             InstalledPlugin? installed = List().FirstOrDefault(item =>
                 string.Equals(item.Manifest.Id, id, StringComparison.OrdinalIgnoreCase));
-            if (installed is null) return new(false, "未找到已安装插件。");
-            if (!installed.Compatible) return new(false, "插件与当前 ZSnaper 或插件接口版本不兼容。");
+            if (installed is null) return new(false, "未找到已安装插件");
+            if (!installed.Compatible) return new(false, "插件与当前 ZSnaper 或插件接口版本不兼容");
 
             string assemblyPath = Path.GetFullPath(Path.Combine(installed.Directory,
                 installed.Manifest.Entry.Assembly.Replace('/', Path.DirectorySeparatorChar)));
             string root = Path.GetFullPath(installed.Directory) + Path.DirectorySeparatorChar;
             if (!assemblyPath.StartsWith(root, StringComparison.OrdinalIgnoreCase) || !File.Exists(assemblyPath))
-                return new(false, "插件入口程序集不存在。");
+                return new(false, "插件入口程序集不存在");
 
             var context = new PluginLoadContext(assemblyPath);
             IZSnaperPlugin? instance = null;
@@ -79,22 +79,22 @@ public sealed class PluginRuntimeManager : IDisposable
                 Assembly assembly = context.LoadManagedAssembly(assemblyPath);
                 Type type = assembly.GetType(installed.Manifest.Entry.Type, throwOnError: true)!;
                 if (!typeof(IZSnaperPlugin).IsAssignableFrom(type))
-                    throw new InvalidDataException("插件入口未实现 IZSnaperPlugin。");
+                    throw new InvalidDataException("插件入口未实现 IZSnaperPlugin");
                 instance = (IZSnaperPlugin)Activator.CreateInstance(type)!;
                 if (!string.Equals(instance.Manifest.Id, installed.Manifest.Id, StringComparison.OrdinalIgnoreCase) ||
                     !string.Equals(instance.Manifest.Version, installed.Manifest.Version, StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidDataException("插件入口的 ID 或版本与清单不一致。");
+                    throw new InvalidDataException("插件入口的 ID 或版本与清单不一致");
 
                 host = new PluginHost(id, _latest, () => { if (!_disposed) Changed?.Invoke(); });
                 await instance.InitializeAsync(host);
                 await instance.EnableAsync();
-                if (_disposed) throw new OperationCanceledException("插件管理器已关闭。");
+                if (_disposed) throw new OperationCanceledException("插件管理器已关闭");
                 _running.Add(id, new RunningPlugin(instance, context, host));
                 _installer.SetEnabled(id, true);
                 _errors.Remove(id);
                 Changed?.Invoke();
                 AppDiagnostics.LogMessage("Plugin.Enable", $"Id={id}");
-                return new(true, $"已启用 {installed.Manifest.Name}。");
+                return new(true, $"已启用 {installed.Manifest.Name}");
             }
             catch (Exception exception)
             {
@@ -136,7 +136,7 @@ public sealed class PluginRuntimeManager : IDisposable
             if (_running.Count == 0) _latest = null;
             Changed?.Invoke();
             AppDiagnostics.LogMessage("Plugin.Disable", $"Id={id}");
-            return new(true, "插件已停用。");
+            return new(true, "插件已停用");
         }
 
         Exception? failure = null;
@@ -153,7 +153,7 @@ public sealed class PluginRuntimeManager : IDisposable
         AppDiagnostics.LogMessage("Plugin.Disable", $"Id={id}; CleanupSuccess={failure is null}",
             failure is null ? Serilog.Events.LogEventLevel.Information : Serilog.Events.LogEventLevel.Warning);
         return failure is null
-            ? new(true, "插件已停用。")
+            ? new(true, "插件已停用")
             : new(false, "插件已停用，但清理时出错：" + failure.GetBaseException().Message);
     }
 
@@ -167,7 +167,7 @@ public sealed class PluginRuntimeManager : IDisposable
             _errors.Remove(id);
             Changed?.Invoke();
             AppDiagnostics.LogMessage("Plugin.Remove", $"Id={id}");
-            return new(true, "插件已卸载。");
+            return new(true, "插件已卸载");
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
@@ -200,12 +200,12 @@ public sealed class PluginRuntimeManager : IDisposable
 
     public async Task<PluginOperationResult> RunActionAsync(string pluginId, string actionId)
     {
-        if (_latest is null) return new(false, "还没有可供插件处理的截图。");
-        if (!_running.TryGetValue(pluginId, out RunningPlugin? running)) return new(false, "插件未启用。");
+        if (_latest is null) return new(false, "还没有可供插件处理的截图");
+        if (!_running.TryGetValue(pluginId, out RunningPlugin? running)) return new(false, "插件未启用");
         try
         {
             await running.Host.ToolbarApi.RunAsync(actionId, _latest);
-            return new(true, "插件动作已完成。");
+            return new(true, "插件动作已完成");
         }
         catch (Exception exception)
         {

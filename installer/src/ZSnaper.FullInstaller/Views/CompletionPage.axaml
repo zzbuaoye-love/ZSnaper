@@ -7,7 +7,7 @@
       <StackPanel Spacing="4">
         <TextBlock Text="STEP 03 / 03" Foreground="#34D399" FontSize="11" FontWeight="Bold" />
         <TextBlock Text="部署完成，一切就绪" Classes="h1" />
-        <TextBlock Text="ZSnaper 已经安装成功，选择你习惯的启动入口与开机偏好。" Classes="muted" />
+        <TextBlock Text="ZSnaper 已经安装成功，选择你习惯的启动入口与开机偏好" Classes="muted" />
       </StackPanel>
 
       <!-- 步骤指示胶囊 (全部完成) -->

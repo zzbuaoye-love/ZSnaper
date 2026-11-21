@@ -71,7 +71,7 @@ internal static class OpenAiCompatibleOcrClient
         Uri endpoint = ResolveEndpoint(settings.Endpoint);
         if (string.IsNullOrWhiteSpace(settings.Model))
         {
-            throw new OcrConfigurationException("请先填写支持图片输入的模型名称。");
+            throw new OcrConfigurationException("请先填写支持图片输入的模型名称");
         }
 
         string effectivePrompt = BuildEffectivePrompt(settings.CustomPrompt);
@@ -126,7 +126,7 @@ internal static class OpenAiCompatibleOcrClient
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new OcrProviderException($"OCR API 请求超时（{settings.TimeoutSeconds} 秒）。");
+            throw new OcrProviderException($"OCR API 请求超时（{settings.TimeoutSeconds} 秒）");
         }
         catch (HttpRequestException exception)
         {
@@ -143,18 +143,18 @@ internal static class OpenAiCompatibleOcrClient
                 string status = $"{(int)response.StatusCode} {response.ReasonPhrase}".Trim();
                 if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
                 {
-                    throw new OcrProviderException($"OCR API 鉴权失败（{status}）。请检查 API Key。{detail}");
+                    throw new OcrProviderException($"OCR API 鉴权失败（{status}），请检查 API Key {detail}");
                 }
 
                 if (IsMultimodalUnsupportedError(detail, settings.Model))
                 {
                     throw new OcrProviderException(
-                        $"当前模型「{settings.Model}」不支持多模态/图片输入。\n" +
-                        "建议在设置中更换为支持视觉的模型（例如 DeepSeek 的 deepseek-flash，OpenAI 的 gpt-4o，通义千问 qwen2.5-vl 等）。" +
+                        $"当前模型「{settings.Model}」不支持多模态/图片输入\n" +
+                        "建议在设置中更换为支持视觉的模型（例如 DeepSeek 的 deepseek-flash，OpenAI 的 gpt-4o，通义千问 qwen2.5-vl 等）" +
                         (string.IsNullOrWhiteSpace(detail) ? string.Empty : $"\n(接口错误: {detail.Trim()})"));
                 }
 
-                throw new OcrProviderException($"OCR API 返回错误（{status}）。{detail}");
+                throw new OcrProviderException($"OCR API 返回错误（{status}） {detail}");
             }
 
             return ReadRecognizedResult(responseBody, settings.Model.Trim());
@@ -176,7 +176,7 @@ internal static class OpenAiCompatibleOcrClient
         Uri endpoint = ResolveEndpoint(settings.Endpoint);
         if (string.IsNullOrWhiteSpace(settings.Model))
         {
-            throw new OcrConfigurationException("请先填写所使用的模型名称。");
+            throw new OcrConfigurationException("请先填写所使用的模型名称");
         }
 
         var payload = new
@@ -224,7 +224,7 @@ internal static class OpenAiCompatibleOcrClient
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new OcrProviderException($"AI 整理请求超时（{settings.TimeoutSeconds} 秒）。");
+            throw new OcrProviderException($"AI 整理请求超时（{settings.TimeoutSeconds} 秒）");
         }
         catch (HttpRequestException exception)
         {
@@ -239,7 +239,7 @@ internal static class OpenAiCompatibleOcrClient
             {
                 string detail = ReadErrorMessage(responseBody);
                 string status = $"{(int)response.StatusCode} {response.ReasonPhrase}".Trim();
-                throw new OcrProviderException($"AI 服务返回错误（{status}）。{detail}");
+                throw new OcrProviderException($"AI 服务返回错误（{status}） {detail}");
             }
 
             return ReadRecognizedResult(responseBody, settings.Model.Trim());
@@ -251,7 +251,7 @@ internal static class OpenAiCompatibleOcrClient
         if (!Uri.TryCreate(endpoint?.Trim(), UriKind.Absolute, out Uri? uri) ||
             uri.Scheme is not ("http" or "https"))
         {
-            throw new OcrConfigurationException("API 地址必须是有效的 http:// 或 https:// 地址。");
+            throw new OcrConfigurationException("API 地址必须是有效的 http:// 或 https:// 地址");
         }
 
         string path = uri.AbsolutePath.TrimEnd('/');
@@ -328,7 +328,7 @@ internal static class OpenAiCompatibleOcrClient
                 !choices[0].TryGetProperty("message", out JsonElement message) ||
                 !message.TryGetProperty("content", out JsonElement content))
             {
-                throw new OcrProviderException("OCR API 响应中没有 choices[0].message.content。");
+                throw new OcrProviderException("OCR API 响应中没有 choices[0].message.content");
             }
 
             string text = content.ValueKind switch
@@ -374,7 +374,7 @@ internal static class OpenAiCompatibleOcrClient
         }
         catch (JsonException exception)
         {
-            throw new OcrProviderException("OCR API 返回了无法解析的 JSON。", exception);
+            throw new OcrProviderException("OCR API 返回了无法解析的 JSON", exception);
         }
     }
 
@@ -466,7 +466,7 @@ internal static class OpenAiCompatibleOcrClient
         if (isRefusal)
         {
             return text +
-                $"\n\n[💡 提示: 模型回复表明其可能为纯文本模型，无法读取图片。请在设置中更换为支持多模态视觉的模型（如 deepseek-flash、gpt-4o 等）。]";
+                $"\n\n[💡 提示: 模型回复表明其可能为纯文本模型，无法读取图片，请在设置中更换为支持多模态视觉的模型（如 deepseek-flash、gpt-4o 等）]";
         }
 
         return text;

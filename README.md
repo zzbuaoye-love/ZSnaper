@@ -27,8 +27,8 @@
   <img src="https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet&logoColor=white" alt="8.0" />
   <img src="https://img.shields.io/badge/C%23-12-239120?logo=csharp&logoColor=white" alt="C# 12" />
   <img src="https://img.shields.io/badge/Platform-Windows%2010%2B-0078D6?logo=windows&logoColor=white" alt="Windows 10+" />
-  <a href="隐私相关"><img src="https://img.shields.io/badge/OCR-100%25%20Support-success?logo=shield" alt="Offline/Online" /></a>
-  <a href="https://github.com/buaoyezz/ZSnaper/releases"><img src="https://img.shields.io/github/v/release/buaoyezz/ZSnaper?include_prereleases&color=orange&label=Version" alt="Latest Release" /></a>
+  <a href="#隐私相关"><img src="https://img.shields.io/badge/OCR-Offline%20%2F%20Online-success?logo=shield" alt="Offline/Online" /></a>
+  <a href="https://github.com/zzbuaoye-love/ZSnaper/releases/latest"><img src="https://img.shields.io/github/v/release/zzbuaoye-love/ZSnaper?color=orange&label=Version" alt="Latest Release" /></a>
 </p>
 
 <p align="center">
@@ -45,6 +45,8 @@
 </p>
 
 ## 构建项目
+
+Windows x64 用户可在 [GitHub Releases](https://github.com/zzbuaoye-love/ZSnaper/releases) 下载安装版、完整 ZIP 或单文件便携版，均内含运行环境。`0.0.6-beta` 安装版可以差分升级到 `1.0.0`，旧版本可运行新版安装包覆盖安装，便携版请下载新版 ZIP。安装包构建与校验步骤见 [installer/README.md](installer/README.md)
 
 ### 所需环境
 

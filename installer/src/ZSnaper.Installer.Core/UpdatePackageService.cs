@@ -55,6 +55,11 @@ public sealed class UpdatePackageService
                 $"This package targets {manifest.From}, but the installed version is {installation.Version}. Use the full installer.");
         }
 
+        if (!File.Exists(Path.ChangeExtension(installation.ExecutablePath, ".dll")))
+        {
+            throw new InvalidOperationException("差分更新仅适用于完整安装目录，请下载新版便携包或完整安装包");
+        }
+
         string extractionDirectory = PayloadArchive.CreateUpdatePayloadTempDirectory();
         string backupDirectory = extractionDirectory + "-backup";
         Dictionary<string, string?> backups = new(StringComparer.OrdinalIgnoreCase);
@@ -105,7 +110,7 @@ public sealed class UpdatePackageService
 
             VerifyInstalledFiles(installation.InstallDirectory, manifest);
             _installerService.OrganizeInstallation(installation.InstallDirectory, updateInstalledVersion);
-            if (updateInstalledVersion)
+            if (updateInstalledVersion && InstallerService.IsRegisteredInstall(installation.InstallDirectory))
             {
                 _installerService.UpdateInstalledVersion(manifest.To);
             }

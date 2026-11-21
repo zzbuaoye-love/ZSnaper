@@ -12,7 +12,7 @@ public static class PayloadArchive
         string sourcePath = Path.GetFullPath(executablePath);
         if (!TryReadPayloadRange(sourcePath, out long offset, out long length))
         {
-            throw new InvalidDataException("安装器中没有找到有效的程序载荷。");
+            throw new InvalidDataException("安装器中没有找到有效的程序载荷");
         }
 
         string tempRoot = Path.Combine(
@@ -99,7 +99,7 @@ public static class PayloadArchive
             int read = input.Read(buffer, 0, (int)Math.Min(buffer.Length, remaining));
             if (read <= 0)
             {
-                throw new EndOfStreamException("安装器载荷不完整。");
+                throw new EndOfStreamException("安装器载荷不完整");
             }
 
             output.Write(buffer, 0, read);

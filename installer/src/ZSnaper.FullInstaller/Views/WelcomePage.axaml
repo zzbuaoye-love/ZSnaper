@@ -55,7 +55,7 @@
             <TextBlock Text="⚡" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center" />
           </Border>
           <TextBlock Text="毫秒级极速响应" FontWeight="SemiBold" Foreground="White" FontSize="12.5" />
-          <TextBlock Text="冷启动轻量低开销，按下快捷键即刻捕获。" Classes="muted" FontSize="11" TextWrapping="Wrap" LineHeight="16" />
+          <TextBlock Text="冷启动轻量低开销，按下快捷键即刻捕获" Classes="muted" FontSize="11" TextWrapping="Wrap" LineHeight="16" />
         </StackPanel>
       </Border>
 
@@ -66,7 +66,7 @@
             <TextBlock Text="🔒" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center" />
           </Border>
           <TextBlock Text="100% 离线识别" FontWeight="SemiBold" Foreground="White" FontSize="12.5" />
-          <TextBlock Text="本地 Windows 引擎驱动，隐私数据零泄露。" Classes="muted" FontSize="11" TextWrapping="Wrap" LineHeight="16" />
+          <TextBlock Text="使用 Windows 本地 OCR 引擎，无需上传图片" Classes="muted" FontSize="11" TextWrapping="Wrap" LineHeight="16" />
         </StackPanel>
       </Border>
 
@@ -77,7 +77,7 @@
             <TextBlock Text="🎯" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center" />
           </Border>
           <TextBlock Text="多窗口智能吸附" FontWeight="SemiBold" Foreground="White" FontSize="12.5" />
-          <TextBlock Text="自动探测窗口边界，配备丰富的专业批注。" Classes="muted" FontSize="11" TextWrapping="Wrap" LineHeight="16" />
+          <TextBlock Text="自动探测窗口边界，配备丰富的专业批注" Classes="muted" FontSize="11" TextWrapping="Wrap" LineHeight="16" />
         </StackPanel>
       </Border>
     </Grid>

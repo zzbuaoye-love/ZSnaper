@@ -104,7 +104,7 @@
             </Border>
 
             <TextBlock Text="安装完成" FontSize="18" FontWeight="SemiBold" Foreground="#FAFAFA" HorizontalAlignment="Center" />
-            <TextBlock Text="ZSnaper 已成功安装到您的电脑。" FontSize="13" Foreground="#A1A1AA" HorizontalAlignment="Center" />
+            <TextBlock Text="ZSnaper 已成功安装到您的电脑" FontSize="13" Foreground="#A1A1AA" HorizontalAlignment="Center" />
           </StackPanel>
 
           <Grid Grid.Row="1" ColumnDefinitions="*,12,*">

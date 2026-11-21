@@ -366,7 +366,7 @@ public class ResultForm : Form
         {
             MessageBox.Show(
                 this,
-                "AI 智能整理需要配置模型 API。\n请在【偏好设置 -> OCR】中配置 API 地址与模型，或点击「本地分段」使用纯离线功能。",
+                "AI 智能整理需要配置模型 API\n请在【偏好设置 -> OCR】中配置 API 地址与模型，或点击「本地分段」使用纯离线功能",
                 "ZSnaper 提示",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);

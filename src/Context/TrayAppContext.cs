@@ -436,7 +436,7 @@ public class TrayAppContext : ApplicationContext
                 _pendingRelease = release;
                 string version = release.CleanVersion;
                 _mainForm.SetUpdateStatus(
-                    "立即更新",
+                    AppUpdateService.SupportsDifferentialUpdates ? "立即更新" : "打开下载页",
                     isBusy: false,
                     release.TagName);
 
@@ -484,6 +484,12 @@ public class TrayAppContext : ApplicationContext
     private async Task ApplyPendingUpdateAsync()
     {
         if (_updateApplyInProgress || _pendingRelease is null || _updateCancellation.IsCancellationRequested) return;
+        if (!AppUpdateService.SupportsDifferentialUpdates)
+        {
+            OpenUpdatePage(_pendingRelease.HtmlUrl);
+            return;
+        }
+
         _updateApplyInProgress = true;
         GitHubRelease release = _pendingRelease;
         _mainForm.SetUpdateStatus("下载更新 0%", isBusy: true);

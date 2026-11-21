@@ -54,13 +54,13 @@ public static class InstallerPaths
             if (string.IsNullOrWhiteSpace(root) ||
                 string.Equals(fullPath.TrimEnd(Path.DirectorySeparatorChar), root.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase))
             {
-                error = "安装目录不能是磁盘根目录。";
+                error = "安装目录不能是磁盘根目录";
                 return false;
             }
 
             if (fullPath.Length > 240)
             {
-                error = "安装目录路径过长。";
+                error = "安装目录路径过长";
                 return false;
             }
 
@@ -68,7 +68,7 @@ public static class InstallerPaths
         }
         catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
         {
-            error = "安装目录无效。";
+            error = "安装目录无效";
             return false;
         }
     }

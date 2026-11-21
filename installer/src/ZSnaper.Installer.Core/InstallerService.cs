@@ -97,6 +97,12 @@ public sealed class InstallerService
         }
 
         string installDirectory = InstallerPaths.Normalize(options.InstallDirectory);
+        if (Directory.Exists(installDirectory) && !IsRegisteredInstall(installDirectory) &&
+            Directory.EnumerateFileSystemEntries(installDirectory).Any())
+        {
+            throw new InvalidOperationException("请选择一个空目录，或选择已安装 ZSnaper 的目录");
+        }
+
         ProcessGuard.EnsureClosed(installDirectory);
 
         string stagingDirectory = installDirectory + ".staging-" + Guid.NewGuid().ToString("N");
@@ -150,11 +156,7 @@ public sealed class InstallerService
     public void Uninstall(string installDirectory)
     {
         string normalizedDirectory = InstallerPaths.Normalize(installDirectory);
-        if (!string.Equals(
-                normalizedDirectory,
-                InstallerPaths.Normalize(InstallerPaths.DefaultInstallDirectory),
-                StringComparison.OrdinalIgnoreCase) &&
-            !IsRegisteredInstall(normalizedDirectory))
+        if (!IsRegisteredInstall(normalizedDirectory))
         {
             throw new InvalidOperationException("The target directory is not a registered ZSnaper installation.");
         }
@@ -335,7 +337,7 @@ public sealed class InstallerService
         ShortcutService.DeleteIfOwned(desktopShortcut, executablePath);
     }
 
-    private static bool IsRegisteredInstall(string directory)
+    internal static bool IsRegisteredInstall(string directory)
     {
         using RegistryKey? key = InstallerPaths.OpenInstallerKey(writable: false);
         string? registered = key?.GetValue("InstallPath") as string;

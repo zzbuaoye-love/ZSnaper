@@ -10,7 +10,7 @@ namespace ZSnaper.Services;
 public static class OcrService
 {
     private const string MissingLanguagePackMessage =
-        "未找到可用的 OCR 语言包，请在 Windows「设置 > 时间和语言 > 语言和区域」中安装语言包。";
+        "未找到可用的 OCR 语言包，请在 Windows「设置 > 时间和语言 > 语言和区域」中安装语言包";
 
     private static readonly Lazy<OcrEngine?> Engine =
         new(CreateEngine, LazyThreadSafetyMode.ExecutionAndPublication);

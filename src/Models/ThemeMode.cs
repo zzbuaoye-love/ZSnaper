@@ -81,28 +81,28 @@ public class ThemePalette
                 GlowColor1 = glow1,
                 GlowColor2 = glow2,
 
-                SidebarBg = isMono ? Color.FromArgb(243, 245, 248) : Color.FromArgb(244, 241, 249),
-                SidebarBorder = isMono ? Color.FromArgb(228, 232, 238) : Color.FromArgb(230, 224, 240),
-                CardBg = isMono ? Color.FromArgb(248, 249, 251) : Color.FromArgb(248, 245, 252),
-                CardBorder = isMono ? Color.FromArgb(223, 227, 235) : Color.FromArgb(221, 215, 232),
+                SidebarBg = isMono ? Color.FromArgb(245, 245, 245) : Color.FromArgb(244, 241, 249),
+                SidebarBorder = isMono ? Color.FromArgb(232, 232, 232) : Color.FromArgb(230, 224, 240),
+                CardBg = isMono ? Color.FromArgb(249, 249, 249) : Color.FromArgb(248, 245, 252),
+                CardBorder = isMono ? Color.FromArgb(227, 227, 227) : Color.FromArgb(221, 215, 232),
                 PrimaryContainer = BlendWithSurface(lightAccent, Color.White, isMono ? 0.06f : 0.11f),
-                OnPrimaryContainer = isMono ? Color.FromArgb(20, 22, 26) : Color.FromArgb(24, 22, 30),
-                SurfaceContainerHigh = isMono ? Color.FromArgb(235, 238, 244) : Color.FromArgb(237, 232, 245),
+                OnPrimaryContainer = isMono ? Color.FromArgb(22, 22, 22) : Color.FromArgb(24, 22, 30),
+                SurfaceContainerHigh = isMono ? Color.FromArgb(238, 238, 238) : Color.FromArgb(237, 232, 245),
 
-                TextPrimary = isMono ? Color.FromArgb(20, 22, 26) : Color.FromArgb(24, 22, 30),
-                TextSecondary = isMono ? Color.FromArgb(74, 80, 90) : Color.FromArgb(76, 71, 86),
-                TextMuted = isMono ? Color.FromArgb(110, 117, 128) : Color.FromArgb(112, 106, 122),
+                TextPrimary = isMono ? Color.FromArgb(22, 22, 22) : Color.FromArgb(24, 22, 30),
+                TextSecondary = isMono ? Color.FromArgb(80, 80, 80) : Color.FromArgb(76, 71, 86),
+                TextMuted = isMono ? Color.FromArgb(117, 117, 117) : Color.FromArgb(112, 106, 122),
 
                 AccentColor = lightAccent,
                 AccentForeground = GetContrastingForeground(lightAccent),
-                NavItemHover = isMono ? Color.FromArgb(16, 15, 23, 42) : Color.FromArgb(16, 61, 83, 111),
+                NavItemHover = isMono ? Color.FromArgb(16, 23, 23, 23) : Color.FromArgb(16, 61, 83, 111),
                 NavItemActive = lightAccent,
                 NavItemActiveText = isMono ? Color.Black : Color.FromArgb(15, 23, 42),
-                SeparatorColor = isMono ? Color.FromArgb(24, 15, 23, 42) : Color.FromArgb(26, 40, 30, 60),
+                SeparatorColor = isMono ? Color.FromArgb(24, 23, 23, 23) : Color.FromArgb(26, 40, 30, 60),
                 WindowControlHover = Color.FromArgb(15, 0, 0, 0),
-                WindowControlText = isMono ? Color.FromArgb(85, 90, 98) : Color.FromArgb(71, 85, 105),
+                WindowControlText = isMono ? Color.FromArgb(90, 90, 90) : Color.FromArgb(71, 85, 105),
                 InputBg = Color.FromArgb(255, 255, 255),
-                InputBorder = isMono ? Color.FromArgb(148, 154, 165) : Color.FromArgb(136, 130, 148)
+                InputBorder = isMono ? Color.FromArgb(154, 154, 154) : Color.FromArgb(136, 130, 148)
             };
         }
         else
@@ -111,22 +111,22 @@ public class ThemePalette
             return new ThemePalette
             {
                 Mode = ThemeMode.Dark,
-                BackgroundColor = isMono ? Color.FromArgb(16, 17, 20) : Color.FromArgb(17, 15, 22),
+                BackgroundColor = isMono ? Color.FromArgb(17, 17, 17) : Color.FromArgb(17, 15, 22),
                 GlowColor1 = glow1,
                 GlowColor2 = glow2,
 
-                SidebarBg = isMono ? Color.FromArgb(25, 26, 31) : Color.FromArgb(26, 24, 33),
-                SidebarBorder = isMono ? Color.FromArgb(44, 46, 54) : Color.FromArgb(48, 43, 58),
-                CardBg = isMono ? Color.FromArgb(23, 24, 29) : Color.FromArgb(24, 22, 30),
-                CardBorder = isMono ? Color.FromArgb(52, 55, 65) : Color.FromArgb(56, 51, 68),
+                SidebarBg = isMono ? Color.FromArgb(26, 26, 26) : Color.FromArgb(26, 24, 33),
+                SidebarBorder = isMono ? Color.FromArgb(46, 46, 46) : Color.FromArgb(48, 43, 58),
+                CardBg = isMono ? Color.FromArgb(24, 24, 24) : Color.FromArgb(24, 22, 30),
+                CardBorder = isMono ? Color.FromArgb(55, 55, 55) : Color.FromArgb(56, 51, 68),
                 PrimaryContainer = BlendWithSurface(darkAccent,
-                    isMono ? Color.FromArgb(28, 30, 36) : Color.FromArgb(28, 25, 36), 0.16f),
-                OnPrimaryContainer = isMono ? Color.FromArgb(238, 240, 244) : Color.FromArgb(235, 230, 242),
-                SurfaceContainerHigh = isMono ? Color.FromArgb(37, 39, 46) : Color.FromArgb(39, 36, 48),
+                    isMono ? Color.FromArgb(30, 30, 30) : Color.FromArgb(28, 25, 36), 0.16f),
+                OnPrimaryContainer = isMono ? Color.FromArgb(240, 240, 240) : Color.FromArgb(235, 230, 242),
+                SurfaceContainerHigh = isMono ? Color.FromArgb(39, 39, 39) : Color.FromArgb(39, 36, 48),
 
-                TextPrimary = isMono ? Color.FromArgb(236, 238, 242) : Color.FromArgb(235, 230, 242),
-                TextSecondary = isMono ? Color.FromArgb(182, 187, 196) : Color.FromArgb(190, 184, 202),
-                TextMuted = isMono ? Color.FromArgb(134, 140, 152) : Color.FromArgb(146, 140, 158),
+                TextPrimary = isMono ? Color.FromArgb(238, 238, 238) : Color.FromArgb(235, 230, 242),
+                TextSecondary = isMono ? Color.FromArgb(187, 187, 187) : Color.FromArgb(190, 184, 202),
+                TextMuted = isMono ? Color.FromArgb(140, 140, 140) : Color.FromArgb(146, 140, 158),
 
                 AccentColor = darkAccent,
                 AccentForeground = isMono ? Color.Black : GetContrastingForeground(darkAccent),
@@ -135,9 +135,9 @@ public class ThemePalette
                 NavItemActiveText = Color.White,
                 SeparatorColor = Color.FromArgb(34, 255, 255, 255),
                 WindowControlHover = Color.FromArgb(30, 255, 255, 255),
-                WindowControlText = isMono ? Color.FromArgb(209, 213, 219) : Color.FromArgb(201, 209, 217),
-                InputBg = isMono ? Color.FromArgb(29, 31, 37) : Color.FromArgb(31, 28, 38),
-                InputBorder = isMono ? Color.FromArgb(92, 97, 108) : Color.FromArgb(106, 100, 118)
+                WindowControlText = isMono ? Color.FromArgb(213, 213, 213) : Color.FromArgb(201, 209, 217),
+                InputBg = isMono ? Color.FromArgb(31, 31, 31) : Color.FromArgb(31, 28, 38),
+                InputBorder = isMono ? Color.FromArgb(97, 97, 97) : Color.FromArgb(106, 100, 118)
             };
         }
     }

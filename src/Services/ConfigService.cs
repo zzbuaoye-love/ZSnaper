@@ -1,5 +1,6 @@
 using Microsoft.Win32;
 using System.Text.Json;
+using ZSnaper.Helpers;
 using ZSnaper.Models;
 
 namespace ZSnaper.Services;
@@ -90,7 +91,7 @@ public class AppConfig
     public bool OpenMainWindowHotkeyForceBinding { get; set; }
     public bool OpenSaveFolderHotkeyForceBinding { get; set; }
     public bool ToggleThemeHotkeyForceBinding { get; set; }
-    public string UpdateChannel { get; set; } = "Beta";
+    public string UpdateChannel { get; set; } = AppVersionInfo.BuildChannel;
     public bool AutoCheckUpdates { get; set; } = true;
     public int UpdateCheckIntervalHours { get; set; } = 24;
     public DateTimeOffset? LastUpdateCheckAt { get; set; }

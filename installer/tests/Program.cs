@@ -6,9 +6,9 @@ internal static class Program
 {
     private static int Main(string[] args)
     {
-        if (args.Length < 2)
+        if (args.Length != 4)
         {
-            Console.Error.WriteLine("Usage: ZSnaper.Installer.Smoke <setup.exe> <update.zup>");
+            Console.Error.WriteLine("Usage: ZSnaper.Installer.Smoke <setup.exe> <update.zup> <base-version> <target-version>");
             return 2;
         }
 
@@ -50,8 +50,8 @@ internal static class Program
 
         UpdateManifest manifest = new UpdatePackageService().ReadManifest(updatePath);
         if (!string.Equals(manifest.Format, "zsnaper-update-1", StringComparison.Ordinal) ||
-            !string.Equals(manifest.From, "0.0.5-beta", StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(manifest.To, "0.0.6-beta", StringComparison.OrdinalIgnoreCase))
+            !string.Equals(manifest.From, args[2], StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(manifest.To, args[3], StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidDataException("The update manifest did not pass the smoke test.");
         }

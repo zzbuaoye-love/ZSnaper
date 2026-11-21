@@ -1,10 +1,10 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.0.6-beta",
+    [string]$Version = "1.0.0",
     [string]$Configuration = "Release",
     [string]$Runtime = "win-x64",
     [string]$BasePayloadDirectory = "",
-    [string]$BaseVersion = "0.0.5-beta",
+    [string]$BaseVersion = "0.0.6-beta",
     [switch]$SkipBuild
 )
 
@@ -39,7 +39,7 @@ foreach ($projectPath in @(
         (Join-Path $installerRoot "src\ZSnaper.UpdateInstaller\ZSnaper.UpdateInstaller.csproj")
     )) {
     $project = [xml](Get-Content -LiteralPath $projectPath -Raw)
-    if ($Version -ne $project.Project.PropertyGroup.InformationalVersion) {
+    if ($Version -ne $project.Project.PropertyGroup.Version) {
         throw "Requested version $Version differs from the installer project version in $projectPath."
     }
 }
@@ -183,6 +183,8 @@ foreach ($directory in Get-ChildItem -LiteralPath $appPublish -Directory) {
     Copy-Item -LiteralPath $directory.FullName -Destination $destinationRoot -Recurse -Force
 }
 Copy-Item -LiteralPath $updateSource -Destination (Join-Path $installedPayload "update\Update.exe") -Force
+Copy-Item -LiteralPath (Join-Path $repoRoot "LICENSE") -Destination (Join-Path $installedPayload "LICENSE.txt")
+Copy-Item -LiteralPath (Join-Path $repoRoot "assets\lucide\LICENSE.lucide.txt") -Destination $installedPayload
 
 $payloadParent = Split-Path $payloadZip -Parent
 New-Item -ItemType Directory -Force -Path $payloadParent | Out-Null
@@ -219,7 +221,12 @@ Compress-Archive -Path (Join-Path $installedPayload "*") -DestinationPath $fullZ
 
 if (Test-Path $portableSource) {
     $portableZipPath = Join-Path $artifactRoot "ZSnaper-v$Version-$Runtime-portable.zip"
-    Compress-Archive -Path $portableSource -DestinationPath $portableZipPath -CompressionLevel Optimal
+    $portableFiles = @(
+        $portableSource
+        (Join-Path $installedPayload "LICENSE.txt")
+        (Join-Path $installedPayload "LICENSE.lucide.txt")
+    )
+    Compress-Archive -LiteralPath $portableFiles -DestinationPath $portableZipPath -CompressionLevel Optimal
 }
 
 if (Test-Path $updateSource) {

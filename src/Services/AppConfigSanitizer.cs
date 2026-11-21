@@ -267,6 +267,12 @@ internal static class AppConfigSanitizer
             return "Release";
         }
 
-        return "Beta";
+        if (string.Equals(value, "Beta", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(value, "Alpha", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Beta";
+        }
+
+        return Helpers.AppVersionInfo.BuildChannel;
     }
 }

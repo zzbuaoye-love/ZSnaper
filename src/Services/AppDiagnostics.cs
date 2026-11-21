@@ -49,7 +49,7 @@ internal static class AppDiagnostics
                 try
                 {
                     MessageBox.Show(
-                        "ZSnaper 遇到异常，但已尽量保持运行。错误详情已写入本地日志；如果功能状态异常，建议重新启动应用。",
+                        "ZSnaper 遇到异常，但已尽量保持运行，错误详情已写入本地日志；如果功能状态异常，建议重新启动应用",
                         "ZSnaper 稳定性保护",
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Warning);

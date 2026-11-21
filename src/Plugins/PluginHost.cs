@@ -88,7 +88,7 @@ internal sealed class PluginCaptureApi(string pluginId, CaptureSnapshot? latest)
         if (!string.Equals(fileName, Path.GetFileName(fileName), StringComparison.Ordinal) ||
             !fileName.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
             fileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
-            throw new ArgumentException("文件名必须是单独的 .png 名称。", nameof(fileName));
+            throw new ArgumentException("文件名必须是单独的 .png 名称", nameof(fileName));
         string directory = ConfigService.GetEffectiveSavePath();
         Directory.CreateDirectory(directory);
         string path = Path.Combine(directory, fileName);
@@ -134,11 +134,11 @@ internal sealed class PluginToolbarApi(string pluginId, Action changed) : IZSnap
         if (string.IsNullOrWhiteSpace(item.Id) || item.Id.Length > 64 ||
             item.Id.Any(ch => !char.IsLetterOrDigit(ch) && ch is not '_' and not '-') ||
             string.IsNullOrWhiteSpace(item.Label) || item.Label.Length > 40)
-            throw new ArgumentException("插件动作 ID 或名称无效。", nameof(item));
+            throw new ArgumentException("插件动作 ID 或名称无效", nameof(item));
         lock (_sync)
         {
             if (!_items.TryAdd(item.Id, new ActionEntry(item, handler)))
-                throw new InvalidOperationException("插件动作 ID 已存在。");
+                throw new InvalidOperationException("插件动作 ID 已存在");
         }
         changed();
         return new PluginToolbarRegistration(item.Id);
@@ -158,7 +158,7 @@ internal sealed class PluginToolbarApi(string pluginId, Action changed) : IZSnap
         lock (_sync)
         {
             if (!_items.TryGetValue(id, out ActionEntry? found))
-                throw new InvalidOperationException("插件动作不存在。");
+                throw new InvalidOperationException("插件动作不存在");
             action = found;
         }
         await action.Handler(new PluginToolbarActionContext { Snapshot = snapshot, PluginId = pluginId },

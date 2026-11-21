@@ -57,7 +57,7 @@ public sealed class PluginInstaller
 
         PluginManifest manifest = inspection.Manifest;
         string target = Path.Combine(InstalledPath, manifest.Id);
-        if (Directory.Exists(target)) throw new IOException($"插件 {manifest.Id} 已安装。");
+        if (Directory.Exists(target)) throw new IOException($"插件 {manifest.Id} 已安装");
 
         Directory.CreateDirectory(InstalledPath);
         Directory.CreateDirectory(StagingPath);
@@ -75,7 +75,7 @@ public sealed class PluginInstaller
                     throw new InvalidDataException($"不安全的插件文件路径：{entry.FullName}");
                 string output = Path.GetFullPath(Path.Combine(staging, relative.Replace('/', Path.DirectorySeparatorChar)));
                 if (!output.StartsWith(staging + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidDataException("插件文件超出安装目录。");
+                    throw new InvalidDataException("插件文件超出安装目录");
                 Directory.CreateDirectory(Path.GetDirectoryName(output)!);
                 using Stream input = entry.Open();
                 using FileStream destination = new(output, FileMode.CreateNew, FileAccess.Write);
@@ -84,7 +84,7 @@ public sealed class PluginInstaller
                 while ((read = input.Read(buffer)) != 0)
                 {
                     if (read > MaxExtractedBytes - extracted)
-                        throw new InvalidDataException("插件解压大小超过限制。");
+                        throw new InvalidDataException("插件解压大小超过限制");
                     extracted += read;
                     destination.Write(buffer, 0, read);
                 }
@@ -107,7 +107,7 @@ public sealed class PluginInstaller
         InstalledPlugin? plugin = List().FirstOrDefault(item =>
             string.Equals(item.Manifest.Id, pluginId, StringComparison.OrdinalIgnoreCase));
         if (plugin is null || enabled && !plugin.Compatible)
-            throw new InvalidOperationException($"插件 {pluginId} 未安装或不兼容。");
+            throw new InvalidOperationException($"插件 {pluginId} 未安装或不兼容");
         Dictionary<string, bool> states = ReadStates();
         states[pluginId] = enabled;
         WriteStates(states);
@@ -117,12 +117,12 @@ public sealed class PluginInstaller
     {
         InstalledPlugin plugin = List().FirstOrDefault(item =>
             string.Equals(item.Manifest.Id, pluginId, StringComparison.OrdinalIgnoreCase))
-            ?? throw new InvalidOperationException($"插件 {pluginId} 未安装。");
+            ?? throw new InvalidOperationException($"插件 {pluginId} 未安装");
         string installedRoot = Path.GetFullPath(InstalledPath) + Path.DirectorySeparatorChar;
         if (!plugin.Directory.StartsWith(installedRoot, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("插件目录无效。");
+            throw new InvalidOperationException("插件目录无效");
         if ((File.GetAttributes(plugin.Directory) & FileAttributes.ReparsePoint) != 0)
-            throw new InvalidOperationException("插件目录是符号链接或联接点。");
+            throw new InvalidOperationException("插件目录是符号链接或联接点");
         Directory.Delete(plugin.Directory, recursive: true);
         Dictionary<string, bool> states = ReadStates();
         states.Remove(pluginId);

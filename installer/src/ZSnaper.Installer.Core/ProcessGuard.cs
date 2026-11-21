@@ -39,7 +39,7 @@ public static class ProcessGuard
                 if (!process.WaitForExit((int)waitTimeout.TotalMilliseconds))
                 {
                     throw new InvalidOperationException(
-                        "ZSnaper 仍在运行，请先从托盘菜单退出后再继续安装或更新。 ");
+                        "ZSnaper 仍在运行，请先从托盘菜单退出后再继续安装或更新");
                 }
             }
         }

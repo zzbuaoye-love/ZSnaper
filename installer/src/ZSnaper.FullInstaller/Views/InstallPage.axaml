@@ -7,7 +7,7 @@
       <StackPanel Spacing="4">
         <TextBlock Text="STEP 02 / 03" Foreground="#34D399" FontSize="11" FontWeight="Bold" />
         <TextBlock Text="选择安装目录" Classes="h1" />
-        <TextBlock Text="选择程序安装路径。默认安装至当前用户应用目录，免管理员权限。" Classes="muted" />
+        <TextBlock Text="选择程序安装路径，默认安装至当前用户应用目录，免管理员权限" Classes="muted" />
       </StackPanel>
 
       <!-- 步骤指示胶囊 -->
@@ -34,7 +34,7 @@
           </Border>
           <StackPanel Grid.Column="1" Spacing="2">
             <TextBlock Text="绿色纯净 · 便携独立" Classes="body" FontSize="12.5" FontWeight="SemiBold" Foreground="White" />
-            <TextBlock Text="安装后可自由移动目录，不写入多余垃圾注册表项。"
+            <TextBlock Text="安装程序会注册 Windows 卸载入口"
                        Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
           </StackPanel>
         </Grid>

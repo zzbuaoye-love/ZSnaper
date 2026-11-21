@@ -109,7 +109,7 @@ public sealed class OcrSettingsPanel : ModernCard
 
         _promptHintLabel = new Label
         {
-            Text = "💡 前置提示词对多模态视觉模型生效。可指定如「提取为 Markdown 表格」或「提取文字并翻译」；留空则提取纯文字。",
+            Text = "💡 前置提示词对多模态视觉模型生效，可指定如「提取为 Markdown 表格」或「提取文字并翻译」；留空则提取纯文字",
             AutoSize = false,
             Font = new Font("Microsoft YaHei UI", 8f),
             TextAlign = ContentAlignment.MiddleLeft,
@@ -144,7 +144,7 @@ public sealed class OcrSettingsPanel : ModernCard
         {
             AutoSize = false,
             Font = new Font("Microsoft YaHei UI", 8.2f),
-            Text = "本地模式不联网；API 模式会把所选截图发送到你配置的服务。",
+            Text = "本地模式不联网；API 模式会把所选截图发送到你配置的服务",
             TextAlign = ContentAlignment.MiddleLeft,
             AutoEllipsis = true
         };
@@ -248,8 +248,8 @@ public sealed class OcrSettingsPanel : ModernCard
         _clearKeyButton.Enabled = enabled && OcrCredentialStore.HasApiKey;
         _testButton.Enabled = enabled;
         _statusLabel.Text = enabled
-            ? "兼容 /v1 或完整 /chat/completions 地址；本地服务可不填 API Key。"
-            : "Windows 本地离线识别，不上传图片，也不需要 API Key。";
+            ? "兼容 /v1 或完整 /chat/completions 地址；本地服务可不填 API Key"
+            : "Windows 本地离线识别，不上传图片，也不需要 API Key";
         ApplyTheme();
     }
 
@@ -288,11 +288,11 @@ public sealed class OcrSettingsPanel : ModernCard
             ConfigService.Current.OcrCustomPrompt = _promptTextBox.Text.Trim();
             if (!ConfigService.Save())
             {
-                throw new InvalidOperationException("配置文件写入失败，请查看本地日志。");
+                throw new InvalidOperationException("配置文件写入失败，请查看本地日志");
             }
 
             _clearKeyButton.Enabled = ApiSelected && OcrCredentialStore.HasApiKey;
-            ShowStatus("设置已保存，下一次 OCR 立即使用此引擎。", success: true);
+            ShowStatus("设置已保存，下一次 OCR 立即使用此引擎", success: true);
         }
         catch (Exception exception)
         {
@@ -320,7 +320,7 @@ public sealed class OcrSettingsPanel : ModernCard
                 _disposeCancellation.Token);
 
             string preview = string.IsNullOrWhiteSpace(result)
-                ? "连接成功，但模型没有返回文字。请确认它支持图片输入。"
+                ? "连接成功，但模型没有返回文字，请确认它支持图片输入"
                 : "连接成功，识别结果：" + result.ReplaceLineEndings(" / ");
             ShowStatus(preview, success: !string.IsNullOrWhiteSpace(result));
         }
@@ -346,7 +346,7 @@ public sealed class OcrSettingsPanel : ModernCard
         string model = _modelTextBox.Text.Trim();
         if (model.Length == 0)
         {
-            throw new OcrConfigurationException("请填写支持图片输入的模型名称。");
+            throw new OcrConfigurationException("请填写支持图片输入的模型名称");
         }
 
         return new OcrApiSettings(endpoint, model, GetSelectedTimeoutSeconds(), _promptTextBox.Text.Trim());
@@ -360,7 +360,7 @@ public sealed class OcrSettingsPanel : ModernCard
             _apiKeyTextBox.Clear();
             _apiKeyTextBox.PlaceholderText = "本地免鉴权服务可留空";
             _clearKeyButton.Enabled = false;
-            ShowStatus("已从 Windows 凭据管理器清除 OCR API Key。", success: true);
+            ShowStatus("已从 Windows 凭据管理器清除 OCR API Key", success: true);
         }
         catch (Exception exception)
         {

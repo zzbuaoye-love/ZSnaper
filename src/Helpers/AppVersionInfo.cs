@@ -5,7 +5,7 @@ namespace ZSnaper.Helpers;
 
 public static class AppVersionInfo
 {
-    public const string Version = "0.0.6";
+    public static string Version { get; } = typeof(AppVersionInfo).Assembly.GetName().Version!.ToString(3);
 
     // User preference: which update channel should be checked.
     public static string Channel => ConfigService.Current.UpdateChannel;
@@ -18,8 +18,8 @@ public static class AppVersionInfo
 
     public static string? WelcomeChannelLabel => IsReleaseBuild ? null : "BETA";
 
-    public const string BuildNumber = "20260925.1";
-    public const string BuildDate = "2026-09-25";
+    public const string BuildNumber = "20261121.1";
+    public const string BuildDate = "2026-11-21";
     public const int BuildCount = 1;
 
     public static bool ShowChannel => !IsReleaseBuild;

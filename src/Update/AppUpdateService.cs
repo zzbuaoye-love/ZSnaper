@@ -10,6 +10,9 @@ public sealed class AppUpdateService
 {
     private static readonly HttpClient Client = CreateClient();
 
+    internal static bool SupportsDifferentialUpdates =>
+        File.Exists(Path.Combine(AppContext.BaseDirectory, "ZSnaper.dll"));
+
     public static GitHubReleaseAsset SelectPackageAsset(GitHubRelease release) =>
         SelectSingleAsset(release, name => name.EndsWith("-Update.zup", StringComparison.OrdinalIgnoreCase), ".zup update package");
 
